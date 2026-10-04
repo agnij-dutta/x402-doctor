@@ -76,7 +76,10 @@ export const NETWORK_LABELS: Record<string, string> = {
   [SOLANA_TESTNET]: "Solana Testnet",
 };
 
-/** Keyless public RPCs. Override with --rpc or X402_DOCTOR_RPC_<chainId|solana-mainnet|...>. */
+/**
+ * Keyless public RPCs. Override with --rpc, or X402_DOCTOR_RPC_<chainId> for EVM and
+ * X402_DOCTOR_RPC_<CAIP-2 upper-cased, non-alphanumerics as "_"> otherwise (see rpcsFor).
+ */
 export const DEFAULT_RPCS: Record<string, string[]> = {
   "eip155:1": ["https://ethereum-rpc.publicnode.com", "https://eth.llamarpc.com"],
   "eip155:11155111": ["https://ethereum-sepolia-rpc.publicnode.com", "https://rpc.sepolia.org"],

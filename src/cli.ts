@@ -16,15 +16,16 @@ Options
       --json               JSON output (one report, or an array for several URLs)
       --facilitator <url>  Check the facilitator's /supported covers each payment option
       --rpc <caip2=url>    Override an RPC, e.g. --rpc eip155:8453=https://... (repeatable)
-      --offline            Skip on-chain reads and facilitator lookups
+      --offline            Skip on-chain reads and public facilitator lookups (--facilitator is still checked)
       --timeout <ms>       Per-request timeout (default 15000)
       --min-score <n>      Exit 1 if score is below n (default: exit 1 on any failure)
-      --strict             Treat warnings as failures for the exit code
-  -v, --verbose            Show every check
+      --strict             Treat warnings as failures for the exit code (ignored with --min-score)
+  -v, --verbose            Show every check, with details and skipped checks
+      --version            Print the version
   -h, --help
 
-Exit codes: 0 ok, 1 failed checks / below --min-score, 2 inconclusive (network, rate limit),
-            64 usage error, 70 internal error.
+Exit codes: 0 ok, 1 failed checks / below --min-score, 2 endpoint inconclusive (network error,
+            rate limit, 5xx, WAF), 64 usage error, 70 internal error.
 
 Scan options (public scan of discovered endpoints; never pays)
       --out <dir>          Output dir (default ./scan)

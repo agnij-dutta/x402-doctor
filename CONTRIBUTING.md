@@ -35,7 +35,7 @@ src/
   rpc.ts              keyless JSON-RPC client with fallback and caching
   evm.ts              ABI decoding, EIP-55, EIP-712 domain separator
   networks.ts         CAIP-2 tables, default RPCs, canonical addresses
-  knownAssets.ts      verified USDC/EURC EIP-712 domains (offline fallback)
+  knownAssets.ts      known token EIP-712 domains: USDC, USDT0, MegaUSD (offline fallback)
   report.ts           terminal and JSON output
   checks/
     handshake.ts      status code, challenge location/encoding, CORS, HEAD, latency
