@@ -1,0 +1,4 @@
+dist
+node_modules
+scan
+package-lock.json

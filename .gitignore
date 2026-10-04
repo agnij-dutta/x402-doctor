@@ -1,0 +1,21 @@
+# dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# env files and keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Per-endpoint raw scan data and caches stay local: nobody gets named publicly before they can fix it.
+scan/raw/
+scan/*.raw.json
+scan/cache/
+
+# logs and OS noise
+*.log
+.DS_Store
