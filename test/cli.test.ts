@@ -56,4 +56,14 @@ describe("cli", () => {
   it("--min-score lets CI tolerate failures above a threshold", async () => {
     expect((await cli([`${srv.base}/bad`, "--min-score", "10"])).code).toBe(0);
   });
+  it('"--" ends options, so a flag-looking URL is rejected as a URL, not parsed as a flag (action input safety)', async () => {
+    const run = (args: string[]) =>
+      new Promise<number>((resolve) =>
+        execFile(process.execPath, ["--import", "tsx", "src/cli.ts", ...args], { env: { ...process.env, NO_COLOR: "1" } }, (err) =>
+          resolve(err ? ((err as any).code as number) : 0),
+        ),
+      );
+    expect(await run(["--rpc", `${BASE_SEPOLIA}=${rpc.url}`, "--timeout", "5000", "--", `${srv.base}/good`])).toBe(0);
+    expect(await run(["--timeout", "5000", "--", "--strict", `${srv.base}/good`])).toBe(64);
+  });
 });

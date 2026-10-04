@@ -6,7 +6,7 @@ branding:
   color: green
 inputs:
   urls:
-    description: Space-separated endpoint URLs to check.
+    description: Endpoint URLs to check, separated by spaces or newlines.
     required: true
   method:
     description: HTTP method for the unpaid probe.
@@ -25,7 +25,8 @@ runs:
   steps:
     - shell: bash
       working-directory: ${{ github.action_path }}
-      run: npm ci --silent && npm run build --silent
+      # --ignore-scripts: the build only needs tsc, so no dependency install script ever runs in the caller's job.
+      run: npm ci --silent --ignore-scripts && npm run build --silent
     # Inputs are passed through env, never interpolated into the script, so a URL can't inject shell.
     - shell: bash
       env:
@@ -36,9 +37,11 @@ runs:
         X402D_STRICT: ${{ inputs.strict }}
         X402D_CLI: ${{ github.action_path }}/dist/cli.js
       run: |
-        read -r -a urls <<< "$X402D_URLS"
+        # Split on spaces AND newlines: plain `read` stops at the first line of a multi-line `urls:` block.
+        read -r -d '' -a urls <<< "$X402D_URLS" || true
         args=(--method "$X402D_METHOD")
         if [ -n "$X402D_MIN_SCORE" ]; then args+=(--min-score "$X402D_MIN_SCORE"); fi
         if [ -n "$X402D_FACILITATOR" ]; then args+=(--facilitator "$X402D_FACILITATOR"); fi
         if [ "$X402D_STRICT" = "true" ]; then args+=(--strict); fi
-        node "$X402D_CLI" "${urls[@]}" "${args[@]}"
+        # "--" ends option parsing, so a urls entry starting with "-" is a URL, never a flag.
+        node "$X402D_CLI" "${args[@]}" -- "${urls[@]}"
