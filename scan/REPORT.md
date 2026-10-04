@@ -5,24 +5,24 @@ Probed **1696** public x402 endpoints across **1696** hosts, discovered from the
 ## Headline
 
 - **1359** endpoints answered an unpaid GET with HTTP 402 and a readable x402 challenge (1359 hosts). Another 1 answered 402 with no x402 challenge at all.
-- **2.5%** of them (34) advertise at least one payment option that cannot settle as advertised (a confirmed, settlement-blocking failure).
+- **2.4%** of them (33) advertise at least one payment option that cannot settle as advertised (a confirmed, settlement-blocking failure).
 - **1.3%** (17) have **no** working payment option at all.
-- **81.8%** (1112) have no confirmed failures.
+- **81.9%** (1113) have no confirmed failures.
 - Most common failure: **CORS on, but PAYMENT-REQUIRED not exposed to browsers**, 192 endpoints (14.1% of live). It breaks browser clients only; server-side agents can still pay.
-- Most common settlement-blocking failure: **Network id in the wrong format**, 13 endpoints (1% of live).
+- Most common settlement-blocking failure: **Network id in the wrong format**, 12 endpoints (0.9% of live).
 - Median price: **$0.01** per request (p25 $0.0050, p75 $0.03, n=1358).
 
 ## Outcomes of the unpaid probe
 
 | outcome | endpoints | meaning |
 |---|---:|---|
-| x402-ok | 1112 | 402 with a valid challenge, no confirmed failures |
+| x402-ok | 1113 | 402 with a valid challenge, no confirmed failures |
 | x402-issues | 213 | 402, confirmed failures that don't block settlement (e.g. CORS) |
 | gone | 128 | 404/410: listed in the catalog but gone |
 | other-status | 48 | other status |
 | served-free | 45 | 2xx without payment (paywall missing on GET) |
 | method | 38 | 405: GET not allowed |
-| x402-broken | 34 | 402, at least one option can't settle |
+| x402-broken | 33 | 402, at least one option can't settle |
 | auth | 26 | 401/403 instead of 402 |
 | host-disabled | 24 | 402 from the hosting platform (deployment disabled), not x402 |
 | inconclusive | 15 | 429/5xx/WAF; not counted as failure |
@@ -35,7 +35,7 @@ Probed **1696** public x402 endpoints across **1696** hosts, discovered from the
 |---:|---|---:|---:|---:|:---:|
 | 1 | CORS on, but PAYMENT-REQUIRED not exposed to browsers (`handshake.cors-expose`) | 192 | 14.1% | 192 | no |
 | 2 | CORS preflight blocks the payment header (`handshake.cors-preflight`) | 132 | 9.7% | 132 | no |
-| 3 | Network id in the wrong format (`schema.network`) | 13 | 1% | 13 | yes |
+| 3 | Network id in the wrong format (`schema.network`) | 12 | 0.9% | 12 | yes |
 | 4 | Solana extra.feePayer missing (`schema.svm-feepayer`) | 11 | 0.8% | 11 | yes |
 | 5 | extra.name / extra.version missing (`schema.eip712-extra`) | 6 | 0.4% | 6 | yes |
 | 6 | resource.url missing (`schema.resource`) | 4 | 0.3% | 4 | no |
@@ -51,7 +51,7 @@ Probed **1696** public x402 endpoints across **1696** hosts, discovered from the
 
 ### EIP-712 domain mismatches seen live
 
-- unknown: declared "USDm"/v2, token is "MegaUSD"/v1: 1 endpoints
+- MegaETH: declared "USDm"/v2, token is "MegaUSD"/v1: 1 endpoints
 - Base: declared "USDC"/v2, token is "USD Coin"/v2: 1 endpoints
 - Polygon: declared "USD Coin"/v2, token is "USD Coin (PoS)"/?: 1 endpoints
 
@@ -67,10 +67,10 @@ Probed **1696** public x402 endpoints across **1696** hosts, discovered from the
 | resource URL doesn't match the endpoint (`schema.resource-url`) | 42 | 3.1% |
 | maxTimeoutSeconds out of range (`schema.timeout`) | 42 | 3.1% |
 | Asset address checksum invalid (`asset.checksum`) | 32 | 2.4% |
-| Non-critical required fields missing (e.g. maxTimeoutSeconds, description) (`schema.required-fields`) | 12 | 0.9% |
-| Network id not strict CAIP-2 / unrecognized (`schema.network`) | 12 | 0.9% |
+| Network id not strict CAIP-2 / unrecognized (`schema.network`) | 13 | 1% |
 | Unknown payment scheme (`schema.scheme`) | 7 | 0.5% |
 | Amount is zero or has leading zeros (`schema.amount-format`) | 6 | 0.4% |
+| Non-critical required fields missing (e.g. maxTimeoutSeconds, description) (`schema.required-fields`) | 3 | 0.2% |
 | payTo checksum invalid (`payTo.checksum`) | 3 | 0.2% |
 | Non-spec assetTransferMethod extension (`schema.transfer-method`) | 2 | 0.1% |
 | Price looks mis-scaled (`asset.price-sanity`) | 1 | 0.1% |
@@ -124,4 +124,4 @@ Static check of every EVM exact/eip3009 payment option listed in the discovery c
 - Probe: unpaid GET + HEAD + CORS GET + OPTIONS preflight, concurrency <= 4, one request at a time per host, never sends payment headers.
 - Confirmation: every failing endpoint re-probed serially; only failures that reproduce are counted; rate limits, timeouts, WAF blocks are 'inconclusive', not failures.
 - On-chain reads: keyless public RPCs; RPC errors are inconclusive, never failures.
-- Endpoints are anonymized here: the JSON uses random per-report ids that can't be mapped back to hosts. Per-endpoint raw data stays local so owners can fix things before anyone is named.
+- Endpoints are anonymized here: the JSON uses random per-report ids (salted, salt never written), and each row carries only outcome, score and check ids, not the networks or prices that could be matched against the public catalogs. Per-endpoint raw data stays local so owners can fix things before anyone is named.
