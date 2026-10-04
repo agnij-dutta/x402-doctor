@@ -201,7 +201,7 @@ function checkRequirement(a: NormalizedRequirement, v: number): Check[] {
         status: "warn",
         accept: i,
         title: "Network identifier format",
-        message: `${tag} network "${r.network}" is namespace:reference shaped but not strict CAIP-2 (reference must be 1-32 chars of [-_a-zA-Z0-9]).`,
+        message: `${tag} network "${r.network}" is namespace:reference shaped but not strict CAIP-2 (namespace 3-8 chars of [-a-z0-9], reference 1-32 chars of [-_a-zA-Z0-9]).`,
         fix: "Use the chain's registered CAIP-2 id (see ChainAgnostic namespaces), if the facilitator accepts it.",
         data: { network: r.network },
       });
