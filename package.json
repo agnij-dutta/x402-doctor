@@ -1,5 +1,5 @@
 {
-  "name": "x402-doctor",
+  "name": "@0xholmes/x402-doctor",
   "version": "0.1.0",
   "description": "Lighthouse for x402 endpoints: probe a paid HTTP endpoint without paying, validate its 402 challenge and on-chain token setup, and score it with a specific fix for every problem.",
   "keywords": [
@@ -81,5 +81,8 @@
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.0",
     "vitest": "^5.0.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
