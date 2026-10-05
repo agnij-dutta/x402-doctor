@@ -1,9 +1,11 @@
 # x402-doctor
 
+[![npm](https://img.shields.io/npm/v/%400xholmes%2Fx402-doctor)](https://www.npmjs.com/package/@0xholmes/x402-doctor)
+
 Lighthouse for x402 endpoints. Point it at a paid HTTP endpoint and it tells you, without paying, whether a real client could actually pay it, and exactly what to change if not. It's for people running x402 APIs and for agent builders deciding which ones to trust.
 
 ```
-$ node dist/cli.js http://localhost:4020/weather
+$ npx @0xholmes/x402-doctor http://localhost:4020/weather
 
 x402-doctor 0.1.0  GET http://localhost:4020/weather
 
@@ -55,7 +57,17 @@ To see how common this is, x402-doctor scanned 1,696 public endpoints from the f
 
 ## Quickstart
 
-x402-doctor isn't published to npm yet, so run it from a clone. Requires Node 20 or newer.
+Requires Node 20 or newer. The npm package is scoped, `@0xholmes/x402-doctor`; the command it installs is `x402-doctor`. (The unscoped `x402-doctor` name on npm belongs to an unrelated project, so always use the scoped name with npx.)
+
+```bash
+npx @0xholmes/x402-doctor https://api.example.com/paid/weather
+
+# or install the x402-doctor command globally
+npm install -g @0xholmes/x402-doctor
+x402-doctor https://api.example.com/paid/weather
+```
+
+To try it on a local endpoint with two deliberate bugs, run the demo server from a clone:
 
 ```bash
 git clone https://github.com/agnij-dutta/x402-doctor.git
@@ -72,7 +84,7 @@ node dist/cli.js http://localhost:4020/fixed --min-score 80    # exits 0
 kill %1
 ```
 
-Point it at your own endpoint the same way: `node dist/cli.js https://api.example.com/paid/weather`. After the first npm release this becomes `npx x402-doctor <url>`.
+From the clone, `node dist/cli.js <url>` runs your local build.
 
 ## Usage
 
@@ -145,7 +157,7 @@ Inputs: `urls` (required, separated by spaces or newlines), `method`, `min-score
 ### Library
 
 ```ts
-import { doctor } from "x402-doctor";
+import { doctor } from "@0xholmes/x402-doctor";
 
 const report = await doctor("https://api.example.com/paid/weather", {
   facilitator: "https://x402.org/facilitator",
@@ -311,10 +323,9 @@ What x402-doctor adds: a single command that checks the whole path a payment tak
 
 ## Roadmap
 
-- Publish to npm so `npx x402-doctor` works, and tag `v0` for the GitHub Action.
 - On-chain checks for more x402 networks (Aptos, Stellar, Sui, Algorand, XRPL), and scheme-specific checks for `upto` and `batch-settlement`.
 - An opt-in testnet mode that signs a throwaway authorization and calls the facilitator's `/verify` (still never settles), to cover what static checks can't.
-- Share the challenge decoder and network tables with `paydecode` (a separate x402/AP2 wire-format decoder, not yet published) instead of keeping a local copy.
+- Share the challenge decoder and network tables with `paydecode` (a separate x402/AP2 wire-format decoder, [on npm](https://www.npmjs.com/package/paydecode)) instead of keeping a local copy.
 - Recurring public scans with a diff against the previous run, and private notification to owners of broken endpoints before any per-host data is published.
 - Probe POST-only catalog entries using the request schema the Bazaar listing declares.
 

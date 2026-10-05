@@ -3,7 +3,7 @@
 //                    Base Sepolia, where USDC's name is "USDC". Every payment signature would fail.
 //   GET /fixed    -> the same challenge with the correct domain.
 // Both enable CORS but don't expose PAYMENT-REQUIRED, so browsers can't read the price.
-// No dependencies: `node examples/broken-server.mjs`, then `npx x402-doctor http://localhost:4020/weather`.
+// No dependencies: `node examples/broken-server.mjs`, then `npx @0xholmes/x402-doctor http://localhost:4020/weather`.
 import http from "node:http";
 
 const PORT = Number(process.env.PORT ?? 4020);

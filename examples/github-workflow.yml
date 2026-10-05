@@ -1,7 +1,7 @@
 # Copy to .github/workflows/x402-doctor.yml in your API repo.
 # Fails the deploy check if your paid endpoints would reject real payments.
-# Note: x402-doctor 0.1.0 is not on npm yet. Until it is, use Option B (the composite action),
-# which builds from this repository.
+# The npm package is scoped: @0xholmes/x402-doctor. The unscoped "x402-doctor" on npm is an
+# unrelated project, so always use the scoped name with npx.
 name: x402-doctor
 on:
   deployment_status:
@@ -21,15 +21,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # Option A: the npm package (after the first npm release)
-      - run: npx -y x402-doctor https://api.example.com/paid/weather https://api.example.com/paid/search --min-score 90
+      # Option A: the npm package
+      - run: npx -y @0xholmes/x402-doctor https://api.example.com/paid/weather https://api.example.com/paid/search --min-score 90
       # Option B: the composite action from this repo
       # - uses: agnij-dutta/x402-doctor@v0
       #   with:
       #     urls: https://api.example.com/paid/weather
       #     min-score: "90"
       # JSON for dashboards / PR comments:
-      - run: npx -y x402-doctor https://api.example.com/paid/weather --json > x402-doctor.json || true
+      - run: npx -y @0xholmes/x402-doctor https://api.example.com/paid/weather --json > x402-doctor.json || true
       - uses: actions/upload-artifact@v4
         with:
           name: x402-doctor

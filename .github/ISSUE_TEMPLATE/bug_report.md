@@ -10,7 +10,7 @@ The URL you ran against, or the decoded `PAYMENT-REQUIRED` JSON if the endpoint 
 **Command and output**
 
 ```
-npx x402-doctor <url> --json
+npx @0xholmes/x402-doctor <url> --json
 ```
 
 **What you expected**

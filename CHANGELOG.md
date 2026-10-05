@@ -4,7 +4,13 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Changed
+
+- Docs, examples and CLI help use the scoped package name: `npx @0xholmes/x402-doctor`.
+
 ## [0.1.0] - 2026-10-05
+
+Published to npm on 2026-10-05 as [`@0xholmes/x402-doctor`](https://www.npmjs.com/package/@0xholmes/x402-doctor). The command it installs is `x402-doctor`.
 
 ### Added
 

@@ -8,8 +8,9 @@ import type { Report } from "./types.js";
 const HELP = `x402-doctor ${VERSION}: Lighthouse for x402 endpoints. Probes without paying.
 
 Usage
-  npx x402-doctor <url> [url...] [options]
-  npx x402-doctor scan [scan options]
+  npx @0xholmes/x402-doctor <url> [url...] [options]
+  npx @0xholmes/x402-doctor scan [scan options]
+  (installed globally, the command is x402-doctor)
 
 Options
   -X, --method <M>         HTTP method for the unpaid probe (default GET)
