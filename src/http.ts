@@ -1,4 +1,4 @@
-export const VERSION = "0.1.0";
+export const VERSION = "0.1.1";
 export const DEFAULT_UA = `x402-doctor/${VERSION} (+https://github.com/agnij-dutta/x402-doctor)`;
 
 /** Headers that would carry a payment. x402-doctor must never send them. */

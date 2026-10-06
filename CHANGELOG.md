@@ -4,6 +4,8 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-06
+
 ### Changed
 
 - Docs, examples and CLI help use the scoped package name: `npx @0xholmes/x402-doctor`.
@@ -23,5 +25,6 @@ Published to npm on 2026-10-05 as [`@0xholmes/x402-doctor`](https://www.npmjs.co
 - Composite GitHub Action (`action.yml`) and an example workflow.
 - First public scan, 2026-10-04: 1,696 endpoints, 1,359 live; see `scan/REPORT.md`.
 
-[Unreleased]: https://github.com/agnij-dutta/x402-doctor/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/agnij-dutta/x402-doctor/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/agnij-dutta/x402-doctor/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/agnij-dutta/x402-doctor/releases/tag/v0.1.0
