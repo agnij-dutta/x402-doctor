@@ -133,6 +133,8 @@ async function main() {
       r.verdict !== "unknown" &&
       (minScore !== undefined ? r.score < minScore : r.verdict === "fail" || (!!o.strict && r.verdict === "warn")),
   );
+  // Wait for stdout to drain first: exiting right away cuts a large --json write to a pipe short.
+  await new Promise<void>((resolve) => process.stdout.write("", () => resolve()));
   process.exit(failed ? 1 : reports.some((r) => r.verdict === "unknown") ? 2 : 0);
 }
 
