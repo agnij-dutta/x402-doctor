@@ -206,7 +206,16 @@ describe("scan aggregate privacy", () => {
   );
   const agg = aggregate([{ target, report }], ctx);
   it("rows carry probe results only, no networks or prices that fingerprint against the catalog", () => {
-    expect(Object.keys(agg.endpoints[0]!).sort()).toEqual(["fails", "host", "outcome", "score", "settlementBroken", "version", "warns"]);
+    expect(Object.keys(agg.endpoints[0]!).sort()).toEqual([
+      "browser",
+      "fails",
+      "host",
+      "outcome",
+      "score",
+      "settlementBroken",
+      "version",
+      "warns",
+    ]);
     expect(JSON.stringify(agg.endpoints)).not.toContain("merchant.example");
     expect(JSON.stringify(agg.endpoints)).not.toContain("0.0123");
     expect(agg.endpoints[0]!.host).toMatch(/^h_[0-9a-f]{12}$/);

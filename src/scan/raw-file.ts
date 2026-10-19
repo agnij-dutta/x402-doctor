@@ -13,6 +13,8 @@ export interface RawScanFile {
   stats: AggregateContext["stats"];
   domainAudit: AggregateContext["domainAudit"];
   results: EndpointResult[];
+  /** Date of the earlier scan whose targets were reused (--targets-from). */
+  targetsFrom?: string;
   /** Set when a subset of endpoints was re-probed after a checker fix. */
   reprobed?: { count: number; reason: string };
 }
@@ -27,7 +29,11 @@ export function writeRaw(out: string, raw: RawScanFile): string {
 
 /** Read a raw scan file, failing with a clear message if it is missing or isn't one. */
 export function readRaw(out: string, date: string): RawScanFile {
-  const p = rawPath(out, date);
+  return readRawFile(rawPath(out, date));
+}
+
+/** Read a raw scan file by path. */
+export function readRawFile(p: string): RawScanFile {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(p, "utf8"));

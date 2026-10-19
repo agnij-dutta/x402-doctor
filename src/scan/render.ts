@@ -68,6 +68,7 @@ export function renderMarkdown(a: Aggregate): string {
     for (const w of a.warningModes) L.push(`| ${w.title} (\`${w.id}\`) | ${w.endpoints} | ${w.pctOfLive}% |`);
     L.push("");
   }
+  L.push(...renderBrowserSection(a));
   L.push("## Catalog-wide EIP-712 domain audit");
   L.push("");
   const da = a.catalogDomainAudit;
@@ -111,10 +112,55 @@ export function renderMarkdown(a: Aggregate): string {
   return L.join("\n");
 }
 
+/** "Browser readiness" section of REPORT.md. */
+export function renderBrowserSection(a: Aggregate): string[] {
+  const L: string[] = [];
+  const m = a.browser.metrics;
+  L.push("## Browser readiness");
+  L.push("");
+  L.push(
+    "Can a web page call these endpoints with `fetch()`? Computed from the same probes (a GET with an `Origin` header and an `OPTIONS` preflight); no extra requests. Endpoints without `Access-Control-Allow-Origin` are counted as not browser-facing, which is fine for server-to-server APIs.",
+  );
+  L.push("");
+  L.push("| metric | endpoints | % of live | % of CORS-on |");
+  L.push("|---|---:|---:|---:|");
+  L.push(`| live | ${m.live} | | |`);
+  L.push(`| CORS on (Allow-Origin on the 402) | ${m.corsOn} | ${m.corsOnPct}% | |`);
+  L.push(`| CORS on, PAYMENT-REQUIRED not exposed | ${m.noExpose} | ${m.noExposePct}% | |`);
+  L.push(`| CORS on, preflight blocks the payment header | ${m.preflightBad} | ${m.preflightBadPct}% | |`);
+  L.push(`| browser-readable (challenge readable from fetch()) | ${m.readable} | ${m.readablePct}% | ${m.readablePctOfCorsOn}% |`);
+  L.push(`| browser-payable (readable, and the preflight passes) | ${m.payable} | ${m.payablePct}% | ${m.payablePctOfCorsOn}% |`);
+  if (m.strict) {
+    L.push(`| strict browser-payable (also: single Allow-Origin, uncharged preflight, no credentialed \`*\`) | ${m.strict.payable} | ${m.strict.payablePct}% | |`);
+  }
+  L.push("");
+  L.push("The first six rows use the same definitions as the 2026-10-04 scan, so they compare across scans. The paid response itself is never checked, because x402-doctor never pays.");
+  L.push("");
+  if (Object.keys(a.browser.status).length) {
+    L.push(`- Browser status: ${rank(a.browser.status).map(([k, n]) => `${k} ${n}`).join(", ")}`);
+    const nb = a.browser.notBrowserFacing;
+    L.push(`- Not judged: no Allow-Origin ${nb.none}, refuses browser origins ${nb.refused}, Allow-Origin pinned to another origin ${nb.restricted}`);
+    const s = a.browser.allowOriginShapes;
+    L.push(`- Allow-Origin shapes: \`*\` ${s.star}, reflected ${s.reflected}, other fixed origin ${s.fixedOther}, several values ${s.duplicated}, invalid ${s.invalid}`);
+    if (Object.keys(a.browser.preflightReasons).length) {
+      L.push(`- Preflight failure reasons: ${rank(a.browser.preflightReasons).map(([k, n]) => `${k} ${n}`).join(", ")}`);
+    }
+    L.push("");
+  }
+  return L;
+}
+
 /** Re-aggregate from the local raw file (after a checker fix) without re-probing anything. */
 export function rebuildFromRaw(out: string, date: string) {
   const raw = readRaw(out, date);
-  const agg = aggregate(raw.results, { date: raw.date, catalog: raw.catalogMeta, stats: raw.stats, domainAudit: raw.domainAudit, perHost: raw.perHost });
+  const agg = aggregate(raw.results, {
+    date: raw.date,
+    catalog: raw.catalogMeta,
+    stats: raw.stats,
+    domainAudit: raw.domainAudit,
+    perHost: raw.perHost,
+    targetsFrom: raw.targetsFrom,
+  });
   writeFileSync(join(out, `${raw.date}.json`), JSON.stringify(agg, null, 2));
   writeFileSync(join(out, "REPORT.md"), renderMarkdown(agg));
 }

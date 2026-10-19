@@ -2,6 +2,7 @@
 // check, plus the specific shapes seen in x402-foundation/x402#3722.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { doctor } from "../src/doctor.js";
+import { evalEndpoint } from "../src/scan/browser-metrics.js";
 import type { Report } from "../src/types.js";
 import {
   BASE_SEPOLIA,
@@ -341,6 +342,21 @@ describe("scoring and modes", () => {
     for (const h of srv.hits) {
       expect(h.headers["payment-signature"]).toBeUndefined();
       expect(h.headers["x-payment"]).toBeUndefined();
+    }
+  });
+});
+
+describe("frozen metrics agree with the checks' recorded bucket", () => {
+  it("legacy readable == data.cors ok/partial, and noExpose == no-expose, on every fixture", async () => {
+    for (const path of Object.keys(routes)) {
+      const r = await run(path);
+      const e = evalEndpoint(r);
+      const bucket = get(r, "handshake.cors-expose")?.data?.cors;
+      expect([path, e.readable]).toEqual([path, bucket === "ok" || bucket === "partial"]);
+      expect([path, e.noExpose]).toEqual([path, bucket === "no-expose"]);
+      expect(e.strict).toBeDefined();
+      // strict payable implies the endpoint is browser-ready, apart from restricted/refused endpoints
+      if (e.strict!.payable) expect([path, r.browser?.status]).toEqual([path, "ready"]);
     }
   });
 });

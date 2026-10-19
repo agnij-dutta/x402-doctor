@@ -34,9 +34,14 @@ Scan options (public scan of discovered endpoints; never pays)
       --per-host <n>       Max endpoints per host (default 2)
       --concurrency <n>    Max parallel probes (capped at 4, default 4)
       --catalog <file>     Reuse a cached discovery catalog
+      --targets-from <f>   Re-probe exactly the targets of an earlier raw scan file (no discovery)
       --timeout <ms>       Per-request timeout (default 15000)
       --rebuild-report     Re-aggregate REPORT.md and <date>.json from the local raw file, no probing
       --date <YYYY-MM-DD>  Which raw file --rebuild-report uses (default today)
+
+  npx @0xholmes/x402-doctor scan compare --from <YYYY-MM-DD> --to <YYYY-MM-DD> [--out <dir>]
+                           Pair two local raw scans by URL and write browser-readiness counts
+                           (compare-<from>-<to>.json and COMPARE.md); no probing
 `;
 
 /** Parse a numeric flag, exiting 64 instead of letting NaN slip through (NaN comparisons are always false). */

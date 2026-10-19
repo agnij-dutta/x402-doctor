@@ -4,6 +4,10 @@ export const FAIL_TITLES: Record<string, string> = {
   "handshake.version": "Protocol version inconsistent",
   "handshake.cors-expose": "CORS on, but PAYMENT-REQUIRED not exposed to browsers",
   "handshake.cors-preflight": "CORS preflight blocks the payment header",
+  "cors.allow-origin": "Allow-Origin on the 402 is not a valid origin",
+  "cors.allow-origin-single": "Allow-Origin has several values (the `*, *` trap)",
+  "cors.preflight-not-charged": "CORS preflight is charged (402)",
+  "cors.cache-control": "402 is publicly cacheable and was served from a shared cache",
   "handshake.head": "HEAD served without payment",
   "handshake.latency": "Slow 402 (> 1s)",
   "schema.amount-field": "Wrong amount field name for the version",
@@ -38,7 +42,12 @@ export const FAIL_TITLES: Record<string, string> = {
 
 /** Some checks mean something different when they warn rather than fail. */
 export const WARN_TITLES: Record<string, string> = {
-  "handshake.cors-expose": "No CORS on the 402, or PAYMENT-RESPONSE not exposed",
+  "handshake.cors-expose": "No CORS on the 402, or PAYMENT-RESPONSE not exposed (0.1.x rule)",
+  "cors.allow-origin": "No CORS on the 402 (advisory), or `*` with credentials",
+  "cors.expose-payment-response": "PAYMENT-RESPONSE not exposed (checked on the 402)",
+  "cors.vary-origin": "Origin reflected without Vary: Origin",
+  "cors.cache-control": "402 is publicly cacheable",
+  "cors.preflight-max-age": "Preflight not cached (Max-Age missing or < 60, advisory)",
   "handshake.version": "Legacy v1, or header/body version disagree",
   "schema.network": "Network id not strict CAIP-2 / unrecognized",
   "schema.amount-format": "Amount is zero or has leading zeros",

@@ -4,6 +4,7 @@ import type { DomainAuditResult } from "./domain-audit.js";
 import { outcomeOf, type EndpointResult, type Outcome } from "./outcome.js";
 import { bump, median, pct, quantile, rank } from "./stats.js";
 import { FAIL_TITLES, WARN_TITLES } from "./titles.js";
+import { evalEndpoint, metricsFromEvals, type EndpointBrowserEval } from "./browser-metrics.js";
 
 /**
  * One anonymized row per probed endpoint in the public JSON. Deliberately carries only what the probe
@@ -17,6 +18,8 @@ export interface EndpointRow {
   version?: number;
   score: number;
   settlementBroken: boolean;
+  /** Browser (CORS) readiness status; absent for reports from x402-doctor 0.1.x. */
+  browser?: string;
   fails: string[];
   warns: string[];
 }
@@ -34,6 +37,8 @@ export interface AggregateContext {
   stats: { uniqueUrls: number; hosts: number; methods: Record<string, number>; nonGet: number; getHosts: number };
   domainAudit: DomainAuditResult;
   perHost: number;
+  /** Date of the earlier scan whose targets (and catalog-level audit) were reused with --targets-from. */
+  targetsFrom?: string;
 }
 
 /** Salted, non-reversible host id. */
@@ -60,6 +65,12 @@ export function aggregate(results: EndpointResult[], ctx: AggregateContext) {
   const hostsLive = new Set<string>();
   const hostsBroken = new Set<string>();
   const rows: EndpointRow[] = [];
+  const evals: EndpointBrowserEval[] = [];
+  const browserStatus: Record<string, number> = {};
+  const browserByCheck: Record<string, Record<string, number>> = {};
+  const preflightReasons: Record<string, number> = {};
+  const notBrowserFacing = { none: 0, refused: 0, restricted: 0, serverOnly: 0 };
+  const allowOriginShapes = { star: 0, reflected: 0, fixedOther: 0, duplicated: 0, invalid: 0 };
   // Fresh random salt per report: ids are stable inside one report but can't be linked back to
   // hosts by hashing the (public) discovery catalog.
   const salt = randomBytes(16);
@@ -98,6 +109,20 @@ export function aggregate(results: EndpointResult[], ctx: AggregateContext) {
         const net = d?.network ?? opt?.caip2 ?? opt?.network;
         bump(domainPairs, `${labelFor(net, net ?? "unknown")}: declared "${d?.got?.name}"/${v(d?.got?.version)}, token is "${d?.expected?.name ?? "?"}"/${v(d?.expected?.version)}`);
       }
+      evals.push(evalEndpoint(r));
+      if (r.browser) bump(browserStatus, r.browser.status);
+      for (const c of r.checks.filter((c) => c.category === "browser")) bump((browserByCheck[c.id] ??= {}), c.status);
+      const c1 = r.checks.find((c) => c.id === "cors.allow-origin");
+      const nb = c1?.data?.browser as string | undefined;
+      if (nb === "none" || nb === "refused" || nb === "restricted") notBrowserFacing[nb]++;
+      if (nb === "server-only") notBrowserFacing.serverOnly++;
+      const shape = c1?.data?.allowOrigin as string | undefined;
+      if (shape === "star" || shape === "reflected" || shape === "duplicated" || shape === "invalid") allowOriginShapes[shape]++;
+      if (shape === "fixed-other") allowOriginShapes.fixedOther++;
+      // Reasons are only recorded after 0.1.x (data.reasons on the preflight check).
+      const pfc = r.checks.find((c) => c.id === "handshake.cors-preflight" && c.status === "fail");
+      for (const reason of (pfc?.data?.reasons as string[] | undefined) ?? []) bump(preflightReasons, reason);
+      if (r.checks.some((c) => c.id === "cors.preflight-not-charged" && c.status === "fail")) bump(preflightReasons, "charged-402");
       const cc = r.checks.find((c) => c.id === "handshake.cors-expose");
       bump(cors, (cc?.data?.cors as string) ?? cc?.status ?? "n/a");
       if (r.version !== undefined) bump(versions, `v${r.version}`);
@@ -120,6 +145,7 @@ export function aggregate(results: EndpointResult[], ctx: AggregateContext) {
       version: r.version,
       score: r.score,
       settlementBroken: r.settlementBroken,
+      browser: r.browser?.status,
       fails: [...new Set(fails.map((c) => c.id))],
       warns: [...new Set(warns.map((c) => c.id))],
     });
@@ -143,7 +169,10 @@ export function aggregate(results: EndpointResult[], ctx: AggregateContext) {
       uniqueHosts: ctx.stats.hosts,
       catalogMethods: ctx.stats.methods,
       skippedNonGet: ctx.stats.nonGet,
-      sampling: `GET-able catalog entries, up to ${ctx.perHost} per host, stable hash order`,
+      sampling: ctx.targetsFrom
+        ? `the same targets as the ${ctx.targetsFrom} scan (--targets-from): GET-able catalog entries, up to ${ctx.perHost} per host, stable hash order`
+        : `GET-able catalog entries, up to ${ctx.perHost} per host, stable hash order`,
+      targetsFrom: ctx.targetsFrom,
       probe: "unpaid GET + HEAD + CORS GET + OPTIONS preflight, concurrency <= 4, one request at a time per host, never sends payment headers",
       confirmation: "every failing endpoint re-probed serially; only failures that reproduce are counted; rate limits, timeouts, WAF blocks are 'inconclusive', not failures",
     },
@@ -169,6 +198,15 @@ export function aggregate(results: EndpointResult[], ctx: AggregateContext) {
     warningModes: rank(warnModes).map(([id, n]) => ({ id, title: WARN_TITLES[id] ?? FAIL_TITLES[id] ?? id, endpoints: n, pctOfLive: pct(n, live) })),
     domainMismatchPairs: rank(domainPairs).map(([k, n]) => ({ pair: k, endpoints: n })),
     cors,
+    browser: {
+      note: "Browser (CORS) readiness among live endpoints. noExpose/preflightBad/readable/payable use the 2026-10-04 (#3722) definitions so scans stay comparable; strict adds the newer rules and needs probe evidence (null for older scans).",
+      metrics: metricsFromEvals(evals),
+      status: browserStatus,
+      byCheck: browserByCheck,
+      preflightReasons,
+      notBrowserFacing,
+      allowOriginShapes,
+    },
     versions,
     networks: rank(networks),
     assets: rank(assets),
@@ -176,7 +214,9 @@ export function aggregate(results: EndpointResult[], ctx: AggregateContext) {
     priceUsd: { endpointsPriced: usd.length, median: median(usd), p25: quantile(usd, 0.25), p75: quantile(usd, 0.75), min: usd.length ? Math.min(...usd) : undefined, max: usd.length ? Math.max(...usd) : undefined },
     latencyMs: { median: median(latency), p90: quantile(latency, 0.9) },
     catalogDomainAudit: {
-      note: "Static check of every EVM exact/eip3009 payment option listed in the discovery catalogs (no endpoint contacted).",
+      note: ctx.targetsFrom
+        ? `Static check of every EVM exact/eip3009 payment option listed in the discovery catalogs (no endpoint contacted). Carried over from the ${ctx.targetsFrom} scan, not re-run.`
+        : "Static check of every EVM exact/eip3009 payment option listed in the discovery catalogs (no endpoint contacted).",
       resourcesChecked: ctx.domainAudit.resourcesChecked,
       resourcesVerified: ctx.domainAudit.resourcesVerified ?? ctx.domainAudit.resourcesChecked,
       resourcesWithMismatch: ctx.domainAudit.resourcesWithMismatch,

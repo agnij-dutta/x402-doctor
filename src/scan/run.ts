@@ -9,7 +9,8 @@ import { DISCOVERY_SOURCES, fetchCatalog, selectTargets, type ScanCatalog, type 
 import { aggregate } from "./aggregate.js";
 import { catalogDomainAudit } from "./domain-audit.js";
 import type { EndpointResult } from "./outcome.js";
-import { writeRaw } from "./raw-file.js";
+import { readRawFile, writeRaw } from "./raw-file.js";
+import { runCompareCli } from "./compare.js";
 import { rebuildFromRaw, renderMarkdown } from "./render.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -20,6 +21,8 @@ export interface ScanConfig {
   limit?: number;
   concurrency: number;
   catalog?: string;
+  /** Re-probe exactly the targets of this earlier raw scan file; skips discovery and the catalog audit. */
+  targetsFrom?: string;
   timeoutMs: number;
   log: (s: string) => void;
 }
@@ -77,23 +80,40 @@ export async function runScan(cfg: ScanConfig) {
   mkdirSync(join(cfg.out, "raw"), { recursive: true });
   mkdirSync(join(cfg.out, "cache"), { recursive: true });
 
-  // 1. discovery
-  let catalog: ScanCatalog;
-  const catPath = cfg.catalog ?? join(cfg.out, "cache", `catalog-${date}.json`);
-  if (existsSync(catPath)) {
-    catalog = JSON.parse(readFileSync(catPath, "utf8")) as ScanCatalog;
-    cfg.log(`catalog: reusing ${catPath} (${catalog.items.length} items)`);
+  // 1. discovery (or reuse the targets of an earlier scan)
+  let catalog: ScanCatalog | undefined;
+  let catalogMeta: { fetchedAt: string; sources: ScanCatalog["sources"] };
+  let targets: Selection[];
+  let stats: ReturnType<typeof selectTargets>["stats"];
+  let perHost = cfg.perHost;
+  let carried: { date: string; domainAudit: Awaited<ReturnType<typeof catalogDomainAudit>> } | undefined;
+  if (cfg.targetsFrom) {
+    const src = readRawFile(cfg.targetsFrom);
+    targets = src.results.map((r) => r.target);
+    if (cfg.limit) targets = targets.slice(0, cfg.limit);
+    catalogMeta = src.catalogMeta;
+    stats = src.stats;
+    perHost = src.perHost;
+    carried = { date: src.date, domainAudit: src.domainAudit };
+    cfg.log(`targets: reusing ${targets.length} targets from ${cfg.targetsFrom} (${src.date}); no discovery, catalog audit carried over`);
   } else {
-    catalog = { fetchedAt: new Date().toISOString(), sources: {}, items: [] };
-    for (const s of DISCOVERY_SOURCES) {
-      cfg.log(`discovering from ${s.name} ...`);
-      const r = await fetchCatalog(s, { log: cfg.log });
-      catalog.sources[s.name] = { total: r.total, fetched: r.items.length, complete: r.complete };
-      catalog.items.push(...r.items);
+    const catPath = cfg.catalog ?? join(cfg.out, "cache", `catalog-${date}.json`);
+    if (existsSync(catPath)) {
+      catalog = JSON.parse(readFileSync(catPath, "utf8")) as ScanCatalog;
+      cfg.log(`catalog: reusing ${catPath} (${catalog.items.length} items)`);
+    } else {
+      catalog = { fetchedAt: new Date().toISOString(), sources: {}, items: [] };
+      for (const s of DISCOVERY_SOURCES) {
+        cfg.log(`discovering from ${s.name} ...`);
+        const r = await fetchCatalog(s, { log: cfg.log });
+        catalog.sources[s.name] = { total: r.total, fetched: r.items.length, complete: r.complete };
+        catalog.items.push(...r.items);
+      }
+      writeFileSync(catPath, JSON.stringify(catalog));
     }
-    writeFileSync(catPath, JSON.stringify(catalog));
+    catalogMeta = { fetchedAt: catalog.fetchedAt, sources: catalog.sources };
+    ({ targets, stats } = selectTargets(catalog.items, { perHost: cfg.perHost, limit: cfg.limit }));
   }
-  const { targets, stats } = selectTargets(catalog.items, { perHost: cfg.perHost, limit: cfg.limit });
   cfg.log(`selected ${targets.length} GET endpoints across ${new Set(targets.map((t) => t.host)).size} hosts (of ${stats.uniqueUrls} unique URLs, ${stats.hosts} hosts)`);
 
   const rpc = new RpcClient({ userAgent: DEFAULT_UA, timeoutMs: 12000 });
@@ -124,20 +144,24 @@ export async function runScan(cfg: ScanConfig) {
   const results: EndpointResult[] = targets.map((t, i) => ({ target: t, report: final[i]! })).filter((x) => x.report);
 
   // 4. catalog-level EIP-712 domain audit (no endpoint contact, on-chain reads only)
-  cfg.log("auditing catalog EIP-712 domains ...");
-  const domainAudit = await catalogDomainAudit(catalog.items, rpc);
+  let domainAudit;
+  if (catalog) {
+    cfg.log("auditing catalog EIP-712 domains ...");
+    domainAudit = await catalogDomainAudit(catalog.items, rpc);
+  } else domainAudit = carried!.domainAudit;
 
   // 5. write outputs
-  const agg = aggregate(results, { date, catalog, stats, domainAudit, perHost: cfg.perHost });
-  const rawFile = writeRaw(cfg.out, { date, perHost: cfg.perHost, catalogMeta: { fetchedAt: catalog.fetchedAt, sources: catalog.sources }, stats, domainAudit, results });
+  const targetsFrom = carried?.date;
+  const agg = aggregate(results, { date, catalog: catalogMeta, stats, domainAudit, perHost, targetsFrom });
+  const rawFile = writeRaw(cfg.out, { date, perHost, catalogMeta, stats, domainAudit, results, targetsFrom });
   writeFileSync(join(cfg.out, `${date}.json`), JSON.stringify(agg, null, 2));
   writeFileSync(join(cfg.out, "REPORT.md"), renderMarkdown(agg));
   cfg.log(`wrote ${join(cfg.out, `${date}.json`)}, ${join(cfg.out, "REPORT.md")} and (gitignored) ${rawFile}`);
   return agg;
 }
 
-/** Thrown for bad scan flags; the CLI maps it to exit code 64. */
-export class UsageError extends Error {}
+import { UsageError } from "./errors.js";
+export { UsageError };
 
 function positiveInt(flag: string, v: string | undefined): number | undefined {
   if (v === undefined) return undefined;
@@ -148,6 +172,7 @@ function positiveInt(flag: string, v: string | undefined): number | undefined {
 
 /** `x402-doctor scan ...` entry point. Returns the process exit code. */
 export async function runScanCli(argv: string[]): Promise<number> {
+  if (argv[0] === "compare") return runCompareCli(argv.slice(1));
   const { values: o } = parseArgs({
     args: argv,
     options: {
@@ -156,6 +181,7 @@ export async function runScanCli(argv: string[]): Promise<number> {
       "per-host": { type: "string" },
       concurrency: { type: "string" },
       catalog: { type: "string" },
+      "targets-from": { type: "string" },
       timeout: { type: "string" },
       "rebuild-report": { type: "boolean" },
       date: { type: "string" },
@@ -169,6 +195,8 @@ export async function runScanCli(argv: string[]): Promise<number> {
     process.stderr.write(`rebuilt ${join(out, `${date}.json`)} and ${join(out, "REPORT.md")} from ${join(out, "raw")}\n`);
     return 0;
   }
+  if (o["targets-from"] && o.catalog) throw new UsageError("--targets-from and --catalog are mutually exclusive");
+  if (o["targets-from"] && o["per-host"]) throw new UsageError("--per-host has no effect with --targets-from (the earlier scan's targets are reused as-is)");
   await runScan({
     out,
     perHost: positiveInt("--per-host", o["per-host"]) ?? 2,
@@ -176,6 +204,7 @@ export async function runScanCli(argv: string[]): Promise<number> {
     // Hard cap of 4 concurrent hosts: the scan is a courtesy to endpoint owners, not a load test.
     concurrency: Math.min(4, positiveInt("--concurrency", o.concurrency) ?? 4),
     catalog: o.catalog,
+    targetsFrom: o["targets-from"],
     timeoutMs: positiveInt("--timeout", o.timeout) ?? 15000,
     log: (s) => process.stderr.write(s + "\n"),
   });
