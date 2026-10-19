@@ -142,6 +142,11 @@ export interface BrowserMetrics {
     payable: number;
     payablePct: number;
     duplicatedAllowOrigin: number;
+    /**
+     * OPTIONS answered 402, on any live endpoint whether or not it has CORS on. The
+     * cors.preflight-not-charged check only judges CORS-on endpoints, so its count is smaller; this
+     * one is the wider fingerprint of method-less paid routes (x402-foundation/x402#3738).
+     */
     chargedPreflight: number;
   };
 }
