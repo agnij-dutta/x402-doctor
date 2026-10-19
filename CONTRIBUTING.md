@@ -38,22 +38,29 @@ src/
   knownAssets.ts      known token EIP-712 domains: USDC, USDT0, MegaUSD (offline fallback)
   report.ts           terminal and JSON output
   checks/
-    handshake.ts      status code, challenge location/encoding, CORS, HEAD, latency
+    handshake.ts      status code, challenge location/encoding, HEAD, latency
+    cors.ts           browser (CORS) checks, from the recorded probe evidence
+    fixrefs.ts        upstream PR references used in fix texts ("in review" until released)
     schema.ts         PaymentRequirements fields per version
     asset.ts          EVM token checks (+ asset-svm.ts for Solana, eip712-domain.ts, price.ts)
     payto.ts          recipient address checks
     facilitator.ts    /supported coverage
   scan/               public scan: discover -> select -> probe -> confirm -> aggregate -> render
+    browser-metrics.ts  FROZEN browser-readiness metrics (pinned to the 2026-10-04 numbers by a test)
+    compare.ts          pair two raw scans by URL; counts only
 test/
   helpers/mocks.ts    mock x402 server + mock JSON-RPC
   doctor.test.ts      end-to-end checks against mock routes
   unit.test.ts        encoders, decoders, scan logic
   cli.test.ts         exit codes and output
+  browser.test.ts     browser (CORS) checks against mock routes, one pass and one fail per check
+  browser-unit.test.ts  scoring cap, summarizeBrowser, checkCors on synthetic evidence
+  scan-browser.test.ts  frozen metrics pins and scan compare
 ```
 
 ## Adding a check
 
-1. **Pick the module** by what the check needs: only the HTTP response (`checks/handshake.ts`), only the challenge JSON (`checks/schema.ts`), or chain state (`checks/asset.ts`, `checks/payto.ts`).
+1. **Pick the module** by what the check needs: only the HTTP response (`checks/handshake.ts`, or `checks/cors.ts` for browser checks, which read `CorsObserved` and send no requests of their own), only the challenge JSON (`checks/schema.ts`), or chain state (`checks/asset.ts`, `checks/payto.ts`).
 2. **Give it a stable id** `<category>.<name>` (for example `schema.amount-format`). Ids are part of the JSON output and the scan data, so don't rename existing ones.
 3. **Push a `Check`** with `status`, a `message` that names the exact field and value, and a `fix` that says what to change. Set `critical: true` only if a real client's payment cannot succeed because of it. That flag drives `settlementBroken` and caps the score at 49.
 4. **Cite the source** in a comment: the x402 spec section, or the reference client/facilitator code that behaves this way.
@@ -67,6 +74,8 @@ test/
 `npx tsx src/cli.ts scan` probes real third-party endpoints. Keep the defaults: concurrency is capped at 4 and one request per host at a time. Raw per-endpoint data is gitignored on purpose. Don't commit it, and don't publish per-host results.
 
 After changing a check, re-aggregate an existing scan without probing anyone: `npx tsx src/cli.ts scan --rebuild-report --date YYYY-MM-DD`.
+
+To measure change over time on the same endpoints, re-probe an earlier scan's targets with `scan --targets-from scan/raw/<date>.raw.json`, then `scan compare --from <date> --to <date>`. Don't edit the definitions in `src/scan/browser-metrics.ts`; add a new metric next to them, so before and after numbers stay comparable.
 
 ## Commits and PRs
 

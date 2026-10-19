@@ -3,6 +3,9 @@
 //                    Base Sepolia, where USDC's name is "USDC". Every payment signature would fail.
 //   GET /fixed    -> the same challenge with the correct domain.
 // Both enable CORS but don't expose PAYMENT-REQUIRED, so browsers can't read the price.
+//   GET /charged-preflight -> correct domain and CORS, but the paywall also answers the OPTIONS
+//                    preflight with 402 (a route registered without a method), so browsers
+//                    block every paid request.
 // No dependencies: `node examples/broken-server.mjs`, then `npx @0xholmes/x402-doctor http://localhost:4020/weather`.
 import http from "node:http";
 
@@ -32,20 +35,28 @@ function challenge(url, name) {
 
 const server = http.createServer((req, res) => {
   const path = (req.url ?? "/").split("?")[0];
-  const name = path === "/weather" ? "USD Coin" : path === "/fixed" ? "USDC" : undefined;
+  const name = path === "/weather" ? "USD Coin" : path === "/fixed" || path === "/charged-preflight" ? "USDC" : undefined;
   if (!name) {
     res.writeHead(404).end("not found");
     return;
   }
   res.setHeader("access-control-allow-origin", "*");
+  const url = `http://localhost:${PORT}${path}`;
+  if (path === "/charged-preflight") {
+    res.setHeader("access-control-expose-headers", "PAYMENT-REQUIRED, PAYMENT-RESPONSE");
+    if (req.method === "OPTIONS") res.setHeader("access-control-allow-headers", "PAYMENT-SIGNATURE, Content-Type");
+    // the bug: the payment check runs for OPTIONS too
+    res.setHeader("payment-required", Buffer.from(JSON.stringify(challenge(url, name))).toString("base64"));
+    res.writeHead(402, { "content-type": "application/json" }).end(req.method === "OPTIONS" ? undefined : "{}");
+    return;
+  }
   if (req.method === "OPTIONS") {
     res.setHeader("access-control-allow-headers", "PAYMENT-SIGNATURE, Content-Type");
     res.writeHead(204).end();
     return;
   }
-  const url = `http://localhost:${PORT}${path}`;
   res.setHeader("payment-required", Buffer.from(JSON.stringify(challenge(url, name))).toString("base64"));
   res.writeHead(402, { "content-type": "application/json" }).end("{}");
 });
 
-server.listen(PORT, () => console.log(`broken x402 example on http://localhost:${PORT}/weather (and /fixed)`));
+server.listen(PORT, () => console.log(`broken x402 example on http://localhost:${PORT}/weather (and /fixed, /charged-preflight)`));

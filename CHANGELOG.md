@@ -4,6 +4,30 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Added
+
+- Browser (CORS) readiness: a new `browser` category, shown as "Browser (CORS)", with nine checks: `cors.allow-origin`, `cors.allow-origin-single` (the `*, *` trap), `handshake.cors-expose`, `cors.expose-payment-response`, `handshake.cors-preflight` (with `data.reason`), `cors.preflight-not-charged` (402 preflights), `cors.vary-origin`, `cors.cache-control` and `cors.preflight-max-age`. They read the existing probes and send no extra requests.
+- `report.browser` (`ready`, `blocked`, `not-browser-facing`, `refused`, `restricted`, `unknown`) and a browser line under the verdict.
+- Probe evidence for the browser checks in `data.observed` on `cors.allow-origin`.
+- `--origin <url>` and `--server-only`, and matching `origin` / `server-only` Action inputs.
+- `Check.penalty` for advisories; `WEIGHTS.browserCap`.
+- `scan --targets-from <raw file>` to re-probe an earlier scan's targets, and `scan compare --from --to` (counts only).
+- Frozen browser-readiness scan metrics (`src/scan/browser-metrics.ts`) and a `browser` block in the scan JSON and REPORT.md.
+- Fix texts reference the upstream x402 PRs (#3738, #3774, #3794, #3809) as "in review" until they are released.
+
+### Changed
+
+- The CORS checks moved from the `handshake` category to `browser`. Their ids are unchanged.
+- No `Access-Control-Allow-Origin` on the 402 is now a zero-penalty advisory on `cors.allow-origin` (it was a -3 warn on `handshake.cors-expose`), so server-only endpoints keep a full score.
+- A missing `PAYMENT-RESPONSE` in the expose list now warns under `cors.expose-payment-response` (same weight as before).
+- A 402 preflight is reported by `cors.preflight-not-charged` instead of `handshake.cors-preflight`.
+- The browser category costs at most 20 points in total.
+- The CORS `Origin` probe of a POST/PUT/PATCH now sends `Content-Type: application/json`, like the unpaid request.
+
+### Fixed
+
+- `--json` output piped to another program could be cut off at the first 8 KB, because the CLI exited before stdout drained.
+
 ## [0.1.1] - 2026-10-06
 
 ### Changed

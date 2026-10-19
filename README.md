@@ -7,20 +7,29 @@ Lighthouse for x402 endpoints. Point it at a paid HTTP endpoint and it tells you
 ```
 $ npx @0xholmes/x402-doctor http://localhost:4020/weather
 
-x402-doctor 0.1.0  GET http://localhost:4020/weather
+x402-doctor 0.1.1  GET http://localhost:4020/weather
 
    49/100   PAYMENTS WILL FAIL
+  browser   BLOCKED: PAYMENT-REQUIRED not exposed
   x402 v2   $0.01 on Base Sepolia
 
   Handshake
-   ✓ GET returned 402 Payment Required in 54 ms.
+   ✓ GET returned 402 Payment Required in 98 ms.
    ✓ v2 challenge found in PAYMENT-REQUIRED header (560 chars).
    ✓ x402 v2.
    ✓ HEAD returns 402 too.
+   ✓ 98 ms to produce the 402 challenge.
+
+  Browser (CORS)
+   ✓ Allow-Origin: * on the 402.
+   ✓ Allow-Origin has a single value.
    ✗ CORS is enabled (Allow-Origin: *) but Access-Control-Expose-Headers is missing. Browsers hide PAYMENT-REQUIRED from fetch(), so browser clients see a 402 with no price and can't pay.
-     fix: Add `Access-Control-Expose-Headers: PAYMENT-REQUIRED, PAYMENT-RESPONSE` to every response on paid routes (including the 402).
+     fix: Add `Access-Control-Expose-Headers: PAYMENT-REQUIRED, PAYMENT-RESPONSE`, merged with any existing value, on every response of paid routes, including the 402. TypeScript SDK: the fix is in review (x402-foundation/x402#3774). Python and Go SDKs: in review (x402-foundation/x402#3794); note that Starlette's `CORSMiddleware(expose_headers=...)` replaces the list instead of merging. Spec: in review (x402-foundation/x402#3809).
    ✓ Preflight allows PAYMENT-SIGNATURE.
-   ✓ 54 ms to produce the 402 challenge.
+   ✓ The preflight is not charged (204).
+   ✓ No Cache-Control on the 402 (402 is not heuristically cacheable).
+   ! Access-Control-Max-Age is missing: every cross-origin paid call pays an extra preflight round trip. Advisory, no score impact.
+     fix: Send `Access-Control-Max-Age: 600` (or more) on the preflight. Spec: in review (x402-foundation/x402#3809).
 
   Schema
    ✓ 1 payment option(s).
@@ -44,7 +53,7 @@ x402-doctor 0.1.0  GET http://localhost:4020/weather
   Facilitator
    · accepts[0] exact on Base Sepolia is settleable by https://x402.org/facilitator, https://facilitator.payai.network.
 
-  17 passed, 0 warnings, 2 failed, 0 inconclusive · 1757 ms · never signed or sent a payment
+  21 passed, 1 warnings, 2 failed, 0 inconclusive · 2704 ms · never signed or sent a payment
 ```
 
 That's a real run against [`examples/broken-server.mjs`](examples/broken-server.mjs), the local demo endpoint from the quickstart. The token checks are real reads of Base Sepolia USDC through a public RPC.
@@ -81,6 +90,7 @@ node examples/broken-server.mjs &
 node dist/cli.js http://localhost:4020/weather                 # the output above; exits 1
 node dist/cli.js http://localhost:4020/fixed                   # settles (90/100) but still exits 1 on the CORS failure
 node dist/cli.js http://localhost:4020/fixed --min-score 80    # exits 0
+node dist/cli.js http://localhost:4020/charged-preflight       # settles, but the CORS preflight is charged (402)
 kill %1
 ```
 
@@ -95,18 +105,20 @@ x402-doctor scan [scan options]
 
 ### Options
 
-| Flag                      | Default              | Description                                                                                                                                                                                                  |
-| ------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `-X, --method <M>`        | `GET`                | HTTP method for the unpaid probe. Use it for POST-only routes.                                                                                                                                               |
-| `--json`                  | off                  | Print the full report as JSON (an array for several URLs).                                                                                                                                                   |
-| `--facilitator <url>`     | none                 | Check that this facilitator's `/supported` covers each payment option (and Solana `feePayer`).                                                                                                               |
-| `--rpc <caip2=url>`       | built-in public RPCs | Override the RPC for a network, e.g. `--rpc eip155:8453=https://...`. Repeatable; repeats for one network become fallbacks.                                                                                  |
-| `--offline`               | off                  | No on-chain reads or public facilitator lookups (an explicit `--facilitator` is still checked). EIP-712 checks fall back to a built-in table of known domains (USDC on 14 chains, USDT0 on Stable, MegaUSD). |
-| `--timeout <ms>`          | `15000`              | Per-request timeout.                                                                                                                                                                                         |
-| `--min-score <n>`         | none                 | Exit 1 if the score is below `n` (0-100) instead of on any failure.                                                                                                                                          |
-| `--strict`                | off                  | Warnings fail the exit code too. Ignored when `--min-score` is set.                                                                                                                                          |
-| `-v, --verbose`           | off                  | Show every check in full, including passes' details and skipped checks.                                                                                                                                      |
-| `--version`, `-h, --help` |                      |                                                                                                                                                                                                              |
+| Flag                      | Default                       | Description                                                                                                                                                                                                  |
+| ------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `-X, --method <M>`        | `GET`                         | HTTP method for the unpaid probe. Use it for POST-only routes.                                                                                                                                               |
+| `--json`                  | off                           | Print the full report as JSON (an array for several URLs).                                                                                                                                                   |
+| `--facilitator <url>`     | none                          | Check that this facilitator's `/supported` covers each payment option (and Solana `feePayer`).                                                                                                               |
+| `--rpc <caip2=url>`       | built-in public RPCs          | Override the RPC for a network, e.g. `--rpc eip155:8453=https://...`. Repeatable; repeats for one network become fallbacks.                                                                                  |
+| `--offline`               | off                           | No on-chain reads or public facilitator lookups (an explicit `--facilitator` is still checked). EIP-712 checks fall back to a built-in table of known domains (USDC on 14 chains, USDT0 on Stable, MegaUSD). |
+| `--timeout <ms>`          | `15000`                       | Per-request timeout.                                                                                                                                                                                         |
+| `--origin <url>`          | `https://x402-doctor.example` | Origin sent on the CORS probes. Use your frontend's origin when your Allow-Origin is pinned to it.                                                                                                           |
+| `--server-only`           | off                           | Skip the CORS probes and the browser checks, for endpoints that are not meant to be called from browsers.                                                                                                    |
+| `--min-score <n>`         | none                          | Exit 1 if the score is below `n` (0-100) instead of on any failure.                                                                                                                                          |
+| `--strict`                | off                           | Warnings fail the exit code too. Ignored when `--min-score` is set.                                                                                                                                          |
+| `-v, --verbose`           | off                           | Show every check in full, including passes' details and skipped checks.                                                                                                                                      |
+| `--version`, `-h, --help` |                               |                                                                                                                                                                                                              |
 
 ### Exit codes
 
@@ -120,16 +132,19 @@ x402-doctor scan [scan options]
 
 ### Scan options
 
-| Flag                  | Default                           | Description                                                                                  |
-| --------------------- | --------------------------------- | -------------------------------------------------------------------------------------------- |
-| `--out <dir>`         | `./scan`                          | Output directory.                                                                            |
-| `--per-host <n>`      | `2`                               | Max endpoints sampled per host.                                                              |
-| `--limit <n>`         | none                              | Max endpoints to probe in total.                                                             |
-| `--concurrency <n>`   | `4`                               | Parallel probes. Capped at 4.                                                                |
-| `--catalog <file>`    | `<out>/cache/catalog-<date>.json` | Reuse a cached discovery catalog.                                                            |
-| `--timeout <ms>`      | `15000`                           | Per-request timeout.                                                                         |
-| `--rebuild-report`    | off                               | Re-aggregate `REPORT.md` and `<date>.json` from the local raw file without probing anything. |
-| `--date <YYYY-MM-DD>` | today                             | Which raw file `--rebuild-report` uses.                                                      |
+| Flag                    | Default                           | Description                                                                                                                                                                               |
+| ----------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--out <dir>`           | `./scan`                          | Output directory.                                                                                                                                                                         |
+| `--per-host <n>`        | `2`                               | Max endpoints sampled per host.                                                                                                                                                           |
+| `--limit <n>`           | none                              | Max endpoints to probe in total.                                                                                                                                                          |
+| `--concurrency <n>`     | `4`                               | Parallel probes. Capped at 4.                                                                                                                                                             |
+| `--catalog <file>`      | `<out>/cache/catalog-<date>.json` | Reuse a cached discovery catalog.                                                                                                                                                         |
+| `--targets-from <file>` | none                              | Re-probe exactly the targets of an earlier raw scan file (for example `scan/raw/2026-10-04.raw.json`). No discovery; that scan's catalog-level EIP-712 audit is carried over, not re-run. |
+| `--timeout <ms>`        | `15000`                           | Per-request timeout.                                                                                                                                                                      |
+| `--rebuild-report`      | off                               | Re-aggregate `REPORT.md` and `<date>.json` from the local raw file without probing anything.                                                                                              |
+| `--date <YYYY-MM-DD>`   | today                             | Which raw file `--rebuild-report` uses.                                                                                                                                                   |
+
+`x402-doctor scan compare --from <YYYY-MM-DD> --to <YYYY-MM-DD> [--out <dir>]` pairs two local raw scans by method and URL and writes `compare-<from>-<to>.json` and `COMPARE.md`: browser-readiness counts for all live endpoints, for the panel of endpoints live in both scans (with gained/lost transitions), and churn. It probes nothing, and the output carries counts only.
 
 ### Environment variables
 
@@ -152,7 +167,7 @@ The composite action in this repo builds the CLI and runs it (see [`examples/git
     min-score: "90"
 ```
 
-Inputs: `urls` (required, separated by spaces or newlines), `method`, `min-score`, `facilitator`, `strict`. Inputs reach the script only through environment variables and the URLs are passed after `--`, so an input can't inject shell or flags. The action needs no token; give the job `permissions: contents: read`.
+Inputs: `urls` (required, separated by spaces or newlines), `method`, `min-score`, `facilitator`, `strict`, `origin` (sent on the CORS probes), `server-only` (`"true"` skips the browser checks). Inputs reach the script only through environment variables and the URLs are passed after `--`, so an input can't inject shell or flags. The action needs no token; give the job `permissions: contents: read`.
 
 ### Library
 
@@ -167,20 +182,21 @@ if (report.settlementBroken) {
 }
 ```
 
-| Export                                                                                                | Description                                                                                                                                                                  |
-| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `doctor(url, options?)`                                                                               | Probe one endpoint. Resolves to a `Report`; never throws on network errors (they become `unknown` checks).                                                                   |
-| `renderPretty(report, { verbose? })` / `renderJson(report)`                                           | The CLI's two output formats.                                                                                                                                                |
-| `score(checks)` / `summarize(checks, acceptCount, inconclusive)` / `WEIGHTS`                          | Scoring: 100 minus 25 per settlement-blocking failure, 10 per other failure, 3 per warning. A missing 402 scores 0 and any settlement-blocking failure caps the score at 49. |
-| `decodeHeaderValue(value)` / `buildChallenge(json, source)` / `normalizeRequirement(raw, i, version)` | Challenge decoding and v1/v2 normalization.                                                                                                                                  |
-| `domainSeparator(name, version, chainId, verifyingContract)`                                          | EIP-712 domain separator.                                                                                                                                                    |
-| `RpcClient`                                                                                           | Keyless JSON-RPC client with fallback and caching; pass one as `rpcClient` to share it across probes.                                                                        |
-| `DEFAULT_RPCS`, `PUBLIC_FACILITATORS`, `VERSION`                                                      | Built-in tables.                                                                                                                                                             |
-| Types                                                                                                 | `Report`, `Check`, `Challenge`, `NormalizedRequirement`, `PriceInfo`, `DoctorOptions`, ...                                                                                   |
+| Export                                                                                                | Description                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doctor(url, options?)`                                                                               | Probe one endpoint. Resolves to a `Report`; never throws on network errors (they become `unknown` checks).                                                                                                                                                                          |
+| `renderPretty(report, { verbose? })` / `renderJson(report)`                                           | The CLI's two output formats.                                                                                                                                                                                                                                                       |
+| `score(checks)` / `summarize(checks, acceptCount, inconclusive)` / `WEIGHTS`                          | Scoring: 100 minus 25 per settlement-blocking failure, 10 per other failure, 3 per warning (a check's `penalty` overrides that; advisories use 0). The browser category costs at most 20 in total. A missing 402 scores 0 and any settlement-blocking failure caps the score at 49. |
+| `summarizeBrowser(checks)` / `checkCors(observed)`                                                    | Browser readiness from the browser checks, and the browser checks themselves from recorded probe evidence.                                                                                                                                                                          |
+| `decodeHeaderValue(value)` / `buildChallenge(json, source)` / `normalizeRequirement(raw, i, version)` | Challenge decoding and v1/v2 normalization.                                                                                                                                                                                                                                         |
+| `domainSeparator(name, version, chainId, verifyingContract)`                                          | EIP-712 domain separator.                                                                                                                                                                                                                                                           |
+| `RpcClient`                                                                                           | Keyless JSON-RPC client with fallback and caching; pass one as `rpcClient` to share it across probes.                                                                                                                                                                               |
+| `DEFAULT_RPCS`, `PUBLIC_FACILITATORS`, `VERSION`                                                      | Built-in tables.                                                                                                                                                                                                                                                                    |
+| Types                                                                                                 | `Report`, `Check`, `Challenge`, `NormalizedRequirement`, `PriceInfo`, `DoctorOptions`, ...                                                                                                                                                                                          |
 
-`DoctorOptions`: `method`, `timeoutMs`, `userAgent`, `rpc` (CAIP-2 to URL or URLs), `facilitator`, `offline`, `checkPublicFacilitators` (default: on unless offline), `publicFacilitators`, `corsOrigin`, `fetch`, `rpcClient`.
+`DoctorOptions`: `method`, `timeoutMs`, `userAgent`, `rpc` (CAIP-2 to URL or URLs), `facilitator`, `offline`, `checkPublicFacilitators` (default: on unless offline), `publicFacilitators`, `corsOrigin`, `serverOnly`, `fetch`, `rpcClient`.
 
-`Report`: `score`, `verdict` (`pass` | `warn` | `fail` | `unknown`), `settlementBroken` (some option can't settle), `noWorkingOption` (none can), `version`, `challenge`, `prices`, `checks[]` (`id`, `status`, `critical`, `accept`, `message`, `fix`, `data`), timing.
+`Report`: `score`, `verdict` (`pass` | `warn` | `fail` | `unknown`), `settlementBroken` (some option can't settle), `noWorkingOption` (none can), `browser` (`{ status, failing }`, see [Browser (CORS)](#browser-cors)), `version`, `challenge`, `prices`, `checks[]` (`id`, `category`, `status`, `critical`, `penalty`, `accept`, `message`, `fix`, `data`), timing.
 
 ## What it checks
 
@@ -194,10 +210,28 @@ Each check is `pass`, `warn`, `fail`, `skip` or `unknown`. Failures marked **blo
 | `handshake.status-402`       | The unpaid request doesn't get `402`: a `2xx` means the resource is free, `401`/`403` stops x402 clients, `404`/`405` usually means the paywall is on another method. **Blocks settlement.** A `402` from Vercel's `DEPLOYMENT_DISABLED` page is attributed to the platform. `429`/`5xx`/WAF are `unknown`. | Mount the payment middleware on this route and method; return 402, not 401/403.                         |
 | `handshake.challenge-decode` | No readable challenge: no `PAYMENT-REQUIRED` header and no v1 body; header not standard base64 (base64url is rejected by the reference client); v2 challenge only in the body (reference clients only read the body for v1). **Blocks settlement.**                                                         | Send the v2 challenge as standard base64 JSON in `PAYMENT-REQUIRED`.                                    |
 | `handshake.version`          | The `PAYMENT-REQUIRED` header carries a version other than 2 (fail; **blocks settlement** unless it's a complete v1 challenge). Warns when header and body disagree, or the challenge is legacy v1.                                                                                                         | Serve one complete version; move to v2.                                                                 |
-| `handshake.cors-expose`      | CORS is on but `PAYMENT-REQUIRED` isn't in `Access-Control-Expose-Headers` (fail: browsers see a 402 with no price). Warns when there's no CORS at all, or only `PAYMENT-RESPONSE` is missing. `*` doesn't count when credentials are allowed.                                                              | `Access-Control-Expose-Headers: PAYMENT-REQUIRED, PAYMENT-RESPONSE`.                                    |
-| `handshake.cors-preflight`   | The `OPTIONS` preflight returns a non-2xx status, or doesn't allow `PAYMENT-SIGNATURE` (v2) or `X-PAYMENT` (v1), so browsers block the paid retry.                                                                                                                                                          | Answer `OPTIONS` with 204 and add the payment header to `Access-Control-Allow-Headers`.                 |
 | `handshake.head`             | `HEAD` is served without payment (warn).                                                                                                                                                                                                                                                                    | Gate `HEAD` too, or don't expose it.                                                                    |
 | `handshake.latency`          | The 402 takes more than 1 s (warn).                                                                                                                                                                                                                                                                         | Build the challenge statically; don't call the facilitator or chain before answering an unpaid request. |
+
+### Browser (CORS)
+
+These decide whether a web page (a browser wallet, an in-page agent) can pay the endpoint with `fetch()`. They read the probes x402-doctor already sends, the unpaid request, the same request with an `Origin` header, and an `OPTIONS` preflight that asks for the payment header, so they add no requests. None of them blocks settlement: server-side agents can still pay. They only fail when the endpoint has opted into CORS (it sends `Access-Control-Allow-Origin`). The category costs at most 20 points in total. `--server-only` skips all of them, and `--origin` probes as a specific origin.
+
+| Check                          | Fails or warns when                                                                                                                                                                                                                                                                                                                                                             | Fix it reports                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `cors.allow-origin`            | Allow-Origin on the 402 is `null` or not a valid origin (fail). No Allow-Origin at all is an advisory warn with no score impact: fine for server-to-server endpoints. `*` with `Allow-Credentials: true` warns. A 401/403 when `Origin` is sent is a deliberate refusal (skip, allowed by the spec), and a fixed other origin is skipped with a hint to re-run with `--origin`. | Send Allow-Origin on the 402 itself, from a CORS layer that also runs on the payment middleware's responses.       |
+| `cors.allow-origin-single`     | Allow-Origin (or Allow-Credentials) has several values on the 402 or the preflight, for example `*, *` from two layers that both set it. Browsers reject it.                                                                                                                                                                                                                    | Set it in one layer only, with `Headers.set()`.                                                                    |
+| `handshake.cors-expose`        | `PAYMENT-REQUIRED` isn't in `Access-Control-Expose-Headers` (`*` doesn't count when credentials are allowed), or the 402 carries `PAYMENT-REQUIRED` without `Origin` but not with it (an edge strips it). Browsers then see a 402 with no price.                                                                                                                                | `Access-Control-Expose-Headers: PAYMENT-REQUIRED, PAYMENT-RESPONSE`, merged with any existing value.               |
+| `cors.expose-payment-response` | `PAYMENT-RESPONSE` (and `X-PAYMENT-RESPONSE` for v1 or dual-version endpoints) isn't named on the 402 (warn). x402-doctor never pays, so this reads the 402 as a proxy for the paid response, and says so.                                                                                                                                                                      | Expose the receipt header too.                                                                                     |
+| `handshake.cors-preflight`     | The preflight is non-2xx (other than 402), has no Allow-Origin, doesn't allow `PAYMENT-SIGNATURE` (v2), `X-PAYMENT` (v1) or both (dual-version), allows only the v1 header on a v2 endpoint, uses `*` with credentials, doesn't allow `Content-Type` for a JSON POST/PUT/PATCH, or doesn't allow a PUT/PATCH/DELETE method. `data.reason` names which.                          | Answer `OPTIONS` with 204 and the payment header in `Access-Control-Allow-Headers`; register `OPTIONS` on 404/405. |
+| `cors.preflight-not-charged`   | The preflight returned 402, usually because a paid route registered without a method also matches `OPTIONS`. The message says when the 402 carries a `PAYMENT-REQUIRED` challenge.                                                                                                                                                                                              | Key paid routes with their method (`"GET /path"`); answer `OPTIONS` before the payment check.                      |
+| `cors.vary-origin`             | Allow-Origin reflects the caller's origin but `Vary` lacks `Origin` (warn): a shared cache can serve a 402 built for another origin.                                                                                                                                                                                                                                            | `Vary: Origin`.                                                                                                    |
+| `cors.cache-control`           | The 402 is publicly cacheable (`public`, `s-maxage`, `max-age>0` without `private`/`no-store`/`no-cache`) (warn), and fails when it was also served from a shared cache (`Age > 0`, or a cache `HIT` header). No `Cache-Control` at all passes.                                                                                                                                 | `Cache-Control: no-store`.                                                                                         |
+| `cors.preflight-max-age`       | `Access-Control-Max-Age` is missing or below 60 on a passing preflight. Advisory, no score impact.                                                                                                                                                                                                                                                                              | `Access-Control-Max-Age: 600`.                                                                                     |
+
+`report.browser.status` sums this up: `ready` (Allow-Origin usable and single-valued, `PAYMENT-REQUIRED` exposed, preflight passes and isn't charged), `blocked` (with the failing check ids), `not-browser-facing`, `refused`, `restricted` or `unknown`. The evidence (status and CORS headers of each probe, never the challenge itself) is recorded in `data.observed` on `cors.allow-origin`.
+
+What these checks can't see: the paid response (x402-doctor never pays), credentialed requests (it sends none, so credential rules are judged from the headers), and what a real browser does with headers it doesn't model. Fix texts point at the upstream x402 PRs as "in review" until they ship in a release.
 
 ### Schema (per payment option)
 
@@ -298,6 +332,8 @@ The EIP-712 check recomputes `keccak256(abi.encode(typeHash, keccak(name), kecca
 | Median 402 latency / p90                       | 703 ms / 1,370 ms                            |
 
 Separately, a static audit of every EVM EIP-3009 option in both catalogs (36,353 resources, no endpoint contacted) found 49 resources whose declared EIP-712 domain doesn't match the token on-chain.
+
+**Browser readiness.** The scan also reports browser-readiness metrics computed by one frozen module (`src/scan/browser-metrics.ts`). On 2026-10-04 they were: 549 of 1,359 live endpoints had CORS on; 357 were browser-readable (26.3% of live, 65.0% of CORS-on) and 323 browser-payable, readable with a passing preflight (23.8% of live, 58.8% of CORS-on). A unit test pins the 192, 132 and 357 to the committed `scan/2026-10-04.json` (the 323 needs per-endpoint preflight results, so its test runs only where the local raw file exists), so later scans use the same definitions. `scan --targets-from scan/raw/2026-10-04.raw.json` re-probes the same targets, and `scan compare` pairs the two scans by URL.
 
 **Privacy:** the published JSON uses salted per-report host ids (the salt is random and never written), and each row carries only the outcome, score and check ids. Earlier drafts also listed each row's networks and prices, which matched about 5% of rows to a single catalog host, so those are published in aggregate only. Per-endpoint raw data (`scan/raw/`) is gitignored and stays local so owners can be told privately before anything is named.
 
