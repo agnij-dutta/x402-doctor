@@ -2,7 +2,7 @@ import type { RpcClient } from "./rpc.js";
 
 export type Status = "pass" | "warn" | "fail" | "skip" | "unknown";
 
-export type Category = "handshake" | "schema" | "asset" | "payTo" | "facilitator";
+export type Category = "handshake" | "browser" | "schema" | "asset" | "payTo" | "facilitator";
 
 export interface Check {
   /** Stable machine id, e.g. "asset.eip712-domain". Used for aggregation in scans. */
@@ -21,6 +21,11 @@ export interface Check {
   critical?: boolean;
   /** Index into accepts[] this check refers to, if any. */
   accept?: number;
+  /**
+   * Score penalty for this check's status, overriding the default weight (fail 10, warn 3).
+   * Advisories set 0: they show in the report but never move the score.
+   */
+  penalty?: number;
   data?: Record<string, unknown>;
 }
 
@@ -60,6 +65,20 @@ export interface PriceInfo {
   asset?: string;
 }
 
+/**
+ * Browser (CORS) readiness, derived from the `browser` category checks by summarizeBrowser().
+ * - ready: Allow-Origin usable and single-valued, PAYMENT-REQUIRED exposed, preflight passes and isn't charged.
+ * - blocked: at least one of those checks failed (ids in `failing`).
+ * - not-browser-facing: no Allow-Origin on the 402 (or --server-only).
+ * - refused: the 402 is refused (401/403) when an Origin header is sent. Allowed by the spec.
+ * - restricted: Allow-Origin is a fixed origin other than the probe origin; re-run with --origin.
+ * - unknown: no CORS probe result (no 402, network error, or a failure that didn't reproduce).
+ */
+export interface BrowserSummary {
+  status: "ready" | "blocked" | "not-browser-facing" | "refused" | "restricted" | "unknown";
+  failing: string[];
+}
+
 export interface Report {
   tool: "x402-doctor";
   toolVersion: string;
@@ -74,6 +93,8 @@ export interface Report {
   settlementBroken: boolean;
   /** No advertised payment option can settle. */
   noWorkingOption: boolean;
+  /** Browser (CORS) readiness. Absent in reports from x402-doctor 0.1.x. */
+  browser?: BrowserSummary;
   version?: number;
   challenge?: Challenge;
   prices: PriceInfo[];
@@ -95,8 +116,10 @@ export interface DoctorOptions {
   checkPublicFacilitators?: boolean;
   /** Known public facilitator URLs (overridable for tests). */
   publicFacilitators?: string[];
-  /** Origin used for CORS probing. */
+  /** Origin used for CORS probing (default https://x402-doctor.example). */
   corsOrigin?: string;
+  /** Skip the CORS probes and browser checks, for endpoints that are deliberately not browser-facing. */
+  serverOnly?: boolean;
   /** Inject fetch (tests). */
   fetch?: typeof fetch;
   /** Share an RPC client (and its cache) across many probes. */

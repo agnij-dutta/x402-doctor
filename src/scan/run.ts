@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { doctor, score, summarize } from "../doctor.js";
+import { doctor, score, summarize, summarizeBrowser } from "../doctor.js";
 import { RpcClient } from "../rpc.js";
 import { DEFAULT_UA } from "../http.js";
 import type { Check, Report } from "../types.js";
@@ -62,14 +62,14 @@ const failKey = (c: Check) => `${c.id}#${c.accept ?? "-"}`;
 /** A failure only counts if it reproduces on a second, serial probe. Otherwise it is downgraded to unknown. */
 export function confirm(first: Report, second: Report): Report {
   if (second.verdict === "unknown" && second.checks.some((c) => c.id === "handshake.reachable" || (c.id === "handshake.status-402" && c.status === "unknown"))) {
-    return { ...second, verdict: "unknown", settlementBroken: false, noWorkingOption: false, score: 0 };
+    return { ...second, verdict: "unknown", settlementBroken: false, noWorkingOption: false, score: 0, browser: { status: "unknown", failing: [] } };
   }
   const firstFails = new Set(first.checks.filter((c) => c.status === "fail").map(failKey));
   const checks = second.checks.map((c) =>
     c.status === "fail" && !firstFails.has(failKey(c)) ? { ...c, status: "unknown" as const, message: `[did not reproduce] ${c.message}` } : c,
   );
   const s = summarize(checks, second.challenge?.accepts.length ?? 0, false);
-  return { ...second, checks, ...s, score: score(checks) };
+  return { ...second, checks, ...s, score: score(checks), browser: summarizeBrowser(checks) };
 }
 
 export async function runScan(cfg: ScanConfig) {

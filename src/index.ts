@@ -1,5 +1,7 @@
 // Public library API. The CLI (src/cli.ts) is a thin wrapper around doctor().
-export { doctor, score, summarize, WEIGHTS } from "./doctor.js";
+export { doctor, score, summarize, summarizeBrowser, penaltyOf, WEIGHTS } from "./doctor.js";
+export { checkCors, observe, type CorsObserved, type ObservedResponse } from "./checks/cors.js";
+export { FIX_REFS, refText, type FixRef } from "./checks/fixrefs.js";
 export { renderPretty, renderJson } from "./report.js";
 export { decodeHeaderValue, buildChallenge, normalizeRequirement } from "./decode.js";
 export { domainSeparator } from "./evm.js";

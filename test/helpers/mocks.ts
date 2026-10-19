@@ -136,11 +136,36 @@ export interface RouteSpec {
   bodyRaw?: string;
   /** Extra response headers. */
   headers?: Record<string, string>;
-  cors?: { allowOrigin?: string; expose?: string; allowHeaders?: string } | false;
+  cors?: CorsSpec | false;
   headStatus?: number;
   /** Status for the OPTIONS preflight (default 204). */
   optionsStatus?: number;
+  /** Send the PAYMENT-REQUIRED challenge on the OPTIONS response too (a charged preflight). */
+  optionsChallenge?: boolean;
+  /** Without an Origin header the 402 carries the challenge; with one, an "edge" strips it. */
+  stripChallengeWithOrigin?: boolean;
   delayMs?: number;
+}
+
+export interface CorsSpec {
+  allowOrigin?: string;
+  expose?: string;
+  allowHeaders?: string;
+  allowMethods?: string;
+  maxAge?: string;
+  vary?: string;
+  /** Send Access-Control-Allow-Credentials: true. */
+  credentials?: boolean;
+  /** CORS headers only when the request has an Origin header (the realistic setup). */
+  onlyWithOrigin?: boolean;
+  /** Echo the request's Origin as Allow-Origin. */
+  reflect?: boolean;
+  /** Write Allow-Origin as two header lines on the 402 (not on the preflight): the `*, *` trap. */
+  duplicateAllowOrigin?: boolean;
+  /** Answer 403 to non-OPTIONS requests that carry an Origin header. */
+  refuseOrigin?: boolean;
+  /** CORS headers on the OPTIONS preflight only, not on the 402. */
+  preflightOnly?: boolean;
 }
 
 export async function startMockServer(routes: Record<string, RouteSpec>) {
@@ -154,13 +179,29 @@ export async function startMockServer(routes: Record<string, RouteSpec>) {
       return res.end("not found");
     }
     const send = () => {
-      if (spec.cors) {
-        if (spec.cors.allowOrigin) res.setHeader("access-control-allow-origin", spec.cors.allowOrigin);
-        if (spec.cors.expose) res.setHeader("access-control-expose-headers", spec.cors.expose);
+      const origin = req.headers.origin;
+      const c = spec.cors;
+      const isOptions = req.method === "OPTIONS";
+      if (c && c.refuseOrigin && origin && !isOptions) {
+        res.statusCode = 403;
+        return res.end("browser origins not allowed");
       }
-      if (req.method === "OPTIONS") {
-        if (spec.cors && spec.cors.allowHeaders) res.setHeader("access-control-allow-headers", spec.cors.allowHeaders);
+      if (c && (!c.onlyWithOrigin || origin) && (!c.preflightOnly || isOptions)) {
+        const ao = c.reflect && origin ? origin : c.allowOrigin;
+        if (ao) res.setHeader("access-control-allow-origin", c.duplicateAllowOrigin && !isOptions ? [ao, ao] : ao);
+        if (c.expose) res.setHeader("access-control-expose-headers", c.expose);
+        if (c.credentials) res.setHeader("access-control-allow-credentials", "true");
+        if (c.vary) res.setHeader("vary", c.vary);
+        if (isOptions) {
+          if (c.allowHeaders) res.setHeader("access-control-allow-headers", c.allowHeaders);
+          if (c.allowMethods) res.setHeader("access-control-allow-methods", c.allowMethods);
+          if (c.maxAge) res.setHeader("access-control-max-age", c.maxAge);
+        }
+      }
+      if (isOptions) {
         res.statusCode = spec.optionsStatus ?? 204;
+        if (spec.optionsChallenge && spec.header)
+          res.setHeader("payment-required", Buffer.from(JSON.stringify(spec.header)).toString("base64"));
         return res.end();
       }
       if (req.method === "HEAD" && spec.headStatus) {
@@ -168,7 +209,9 @@ export async function startMockServer(routes: Record<string, RouteSpec>) {
         return res.end();
       }
       res.statusCode = spec.status ?? 402;
-      if (spec.headerRaw !== undefined) res.setHeader("payment-required", spec.headerRaw);
+      if (spec.stripChallengeWithOrigin && origin) {
+        // the "edge" drops the challenge from cross-origin responses
+      } else if (spec.headerRaw !== undefined) res.setHeader("payment-required", spec.headerRaw);
       else if (spec.header) {
         const json = JSON.stringify(spec.header);
         res.setHeader("payment-required", Buffer.from(json).toString(spec.headerEncoding === "base64url" ? "base64url" : "base64"));
@@ -233,9 +276,15 @@ export function v1Challenge(url: string, over: Record<string, unknown> = {}) {
   };
 }
 
-export const GOOD_CORS = {
+export const GOOD_CORS: CorsSpec = {
   allowOrigin: "*",
   expose: "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
   allowHeaders: "PAYMENT-SIGNATURE, Content-Type",
+  maxAge: "600",
 };
-export const GOOD_CORS_V1 = { allowOrigin: "*", expose: "X-PAYMENT-RESPONSE", allowHeaders: "X-PAYMENT, Content-Type" };
+export const GOOD_CORS_V1: CorsSpec = {
+  allowOrigin: "*",
+  expose: "X-PAYMENT-RESPONSE",
+  allowHeaders: "X-PAYMENT, Content-Type",
+  maxAge: "600",
+};

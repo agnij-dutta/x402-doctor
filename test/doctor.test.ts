@@ -332,11 +332,20 @@ describe("CORS", () => {
     expect(c.fix).toContain("Access-Control-Expose-Headers: PAYMENT-REQUIRED, PAYMENT-RESPONSE");
     expect(r.settlementBroken).toBe(false); // agents can still pay; browsers can't
   });
-  it("warns when there's no CORS at all", async () => {
-    expect(status(await run("/no-cors"), "handshake.cors-expose")).toEqual(["warn"]);
+  it("no CORS at all is a zero-penalty advisory, and the expose check is not judged", async () => {
+    const r = await run("/no-cors");
+    expect(status(r, "cors.allow-origin")).toEqual(["warn"]);
+    expect(get(r, "cors.allow-origin")[0]!.penalty).toBe(0);
+    expect(status(r, "handshake.cors-expose")).toEqual(["skip"]);
+    expect(get(r, "handshake.cors-expose")[0]!.data?.cors).toBe("none");
+    expect(r.score).toBe(100);
+    expect(r.browser?.status).toBe("not-browser-facing");
   });
   it("warns when only PAYMENT-RESPONSE is missing", async () => {
-    expect(status(await run("/partial-cors"), "handshake.cors-expose")).toEqual(["warn"]);
+    const r = await run("/partial-cors");
+    expect(status(r, "handshake.cors-expose")).toEqual(["pass"]);
+    expect(get(r, "handshake.cors-expose")[0]!.data?.cors).toBe("partial");
+    expect(status(r, "cors.expose-payment-response")).toEqual(["warn"]);
   });
   it("fails when the preflight doesn't allow PAYMENT-SIGNATURE", async () => {
     expect(status(await run("/preflight-blocks"), "handshake.cors-preflight")).toEqual(["fail"]);
@@ -514,7 +523,10 @@ describe("independent review regressions", () => {
     expect(status(r, "schema.required-fields")).toEqual(["pass"]);
   });
   it("a non-2xx preflight fails even with the right headers", async () => {
-    const c = get(await run("/preflight-402"), "handshake.cors-preflight")[0]!;
+    // A 402 preflight is reported under its own id, not as a generic preflight failure.
+    const r = await run("/preflight-402");
+    expect(status(r, "handshake.cors-preflight")).toEqual(["skip"]);
+    const c = get(r, "cors.preflight-not-charged")[0]!;
     expect(c.status).toBe("fail");
     expect(c.message).toContain("402");
     expect(status(await run("/good-v2"), "handshake.cors-preflight")).toEqual(["pass"]);

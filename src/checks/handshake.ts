@@ -1,6 +1,7 @@
 import type { Challenge, Check } from "../types.js";
 import type { ProbeResponse } from "../http.js";
 import { buildChallenge, decodeHeaderValue, tryParseJson } from "../decode.js";
+import { checkCors, observe, serverOnlyCheck } from "./cors.js";
 
 export interface HandshakeInput {
   url: string;
@@ -10,6 +11,8 @@ export interface HandshakeInput {
   corsGet?: ProbeResponse;
   preflight?: ProbeResponse;
   corsOrigin: string;
+  /** Skip the browser (CORS) checks. */
+  serverOnly?: boolean;
 }
 
 export interface HandshakeResult {
@@ -264,8 +267,20 @@ export function checkHandshake(inp: HandshakeInput): HandshakeResult {
     }
   }
 
-  // ---- CORS ----
-  checks.push(...corsChecks(inp, challenge?.version ?? (header ? 2 : 1)));
+  // ---- browser (CORS) ----
+  if (inp.serverOnly) checks.push(serverOnlyCheck());
+  else
+    checks.push(
+      ...checkCors({
+        origin: inp.corsOrigin,
+        method: M,
+        version: challenge?.version ?? (header ? 2 : 1),
+        dual: !!header && body?.x402Version === 1,
+        p1: observe(r),
+        p2: observe(inp.corsGet),
+        p3: observe(inp.preflight),
+      }),
+    );
 
   // ---- latency ----
   const ms = r.ms;
@@ -283,142 +298,4 @@ export function checkHandshake(inp: HandshakeInput): HandshakeResult {
   });
 
   return { checks, challenge, inconclusive: false };
-}
-
-function listHas(list: string | null, name: string): boolean {
-  if (!list) return false;
-  return list
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .some((s) => s === "*" || s === name.toLowerCase());
-}
-
-function corsChecks(inp: HandshakeInput, version: number): Check[] {
-  const out: Check[] = [];
-  const g = inp.corsGet;
-  if (!g || !g.ok || g.status === 429 || g.status >= 500) {
-    out.push({
-      id: "handshake.cors-expose",
-      category: C,
-      status: "skip",
-      title: "CORS exposes x402 headers",
-      message: "CORS probe inconclusive.",
-    });
-    return out;
-  }
-  const acao = g.headers.get("access-control-allow-origin");
-  const acac = (g.headers.get("access-control-allow-credentials") ?? "").toLowerCase() === "true";
-  const expose = g.headers.get("access-control-expose-headers");
-  if (!acao) {
-    out.push({
-      id: "handshake.cors-expose",
-      category: C,
-      status: "warn",
-      title: "CORS exposes x402 headers",
-      message:
-        "No Access-Control-Allow-Origin on the 402: browser wallets and in-page agents can't call this endpoint. Fine if it is server-to-server only.",
-      fix: `Add CORS for paid routes: Access-Control-Allow-Origin, and Access-Control-Expose-Headers: ${version === 2 ? "PAYMENT-REQUIRED, PAYMENT-RESPONSE" : "X-PAYMENT-RESPONSE"}.`,
-      data: { cors: "none" },
-    });
-    return out;
-  }
-  // "*" in expose-headers is ignored by browsers when credentials are allowed.
-  const has = (n: string) => listHas(expose, n) && !(acac && (expose ?? "").trim() === "*");
-  if (version === 2) {
-    const missing: string[] = [];
-    if (!has("PAYMENT-REQUIRED")) missing.push("PAYMENT-REQUIRED");
-    if (!has("PAYMENT-RESPONSE")) missing.push("PAYMENT-RESPONSE");
-    if (missing.includes("PAYMENT-REQUIRED")) {
-      out.push({
-        id: "handshake.cors-expose",
-        category: C,
-        status: "fail",
-        title: "CORS exposes x402 headers",
-        message: `CORS is enabled (Allow-Origin: ${acao}) but Access-Control-Expose-Headers ${expose ? `is "${expose}"` : "is missing"}. Browsers hide PAYMENT-REQUIRED from fetch(), so browser clients see a 402 with no price and can't pay.`,
-        fix: "Add `Access-Control-Expose-Headers: PAYMENT-REQUIRED, PAYMENT-RESPONSE` to every response on paid routes (including the 402).",
-        data: { cors: "no-expose", acao, expose },
-      });
-    } else if (missing.length) {
-      out.push({
-        id: "handshake.cors-expose",
-        category: C,
-        status: "warn",
-        title: "CORS exposes x402 headers",
-        message: `PAYMENT-REQUIRED is exposed but ${missing.join(", ")} is not (on the 402 at least). Browser clients won't see the settlement receipt after paying.`,
-        fix: "Expose PAYMENT-RESPONSE too: `Access-Control-Expose-Headers: PAYMENT-REQUIRED, PAYMENT-RESPONSE`.",
-        data: { cors: "partial", acao, expose },
-      });
-    } else {
-      out.push({
-        id: "handshake.cors-expose",
-        category: C,
-        status: "pass",
-        title: "CORS exposes x402 headers",
-        message: `Exposes ${expose}.`,
-        data: { cors: "ok" },
-      });
-    }
-  } else {
-    if (!has("X-PAYMENT-RESPONSE")) {
-      out.push({
-        id: "handshake.cors-expose",
-        category: C,
-        status: "warn",
-        title: "CORS exposes x402 headers",
-        message:
-          "v1 challenge is in the body (readable), but X-PAYMENT-RESPONSE isn't exposed, so browser clients can't read the settlement receipt.",
-        fix: "Add `Access-Control-Expose-Headers: X-PAYMENT-RESPONSE`.",
-        data: { cors: "partial", acao, expose },
-      });
-    } else {
-      out.push({
-        id: "handshake.cors-expose",
-        category: C,
-        status: "pass",
-        title: "CORS exposes x402 headers",
-        message: `Exposes ${expose}.`,
-        data: { cors: "ok" },
-      });
-    }
-  }
-
-  // preflight: can the browser send the payment header?
-  const p = inp.preflight;
-  const payHeader = version === 2 ? "PAYMENT-SIGNATURE" : "X-PAYMENT";
-  if (p && p.ok && p.status < 500 && p.status !== 429) {
-    const allowH = p.headers.get("access-control-allow-headers");
-    const allowO = p.headers.get("access-control-allow-origin");
-    // Fetch standard, CORS-preflight fetch: the response must have an "ok status" (200-299). A paywall
-    // that also answers OPTIONS with 402 (or a router that 404s it) blocks the paid retry whatever its headers say.
-    if (p.status < 200 || p.status > 299) {
-      out.push({
-        id: "handshake.cors-preflight",
-        category: C,
-        status: "fail",
-        title: "CORS preflight allows the payment header",
-        message: `OPTIONS preflight returned ${p.status}. Browsers require a 2xx preflight, so they will block the paid retry even though the headers may be right.`,
-        fix: `Answer OPTIONS on paid routes with 204 (before the payment middleware) and Access-Control-Allow-Headers including ${payHeader}.`,
-        data: { allowHeaders: allowH, status: p.status },
-      });
-    } else if (!allowO || !listHas(allowH, payHeader)) {
-      out.push({
-        id: "handshake.cors-preflight",
-        category: C,
-        status: "fail",
-        title: "CORS preflight allows the payment header",
-        message: `OPTIONS preflight ${allowO ? "" : "has no Allow-Origin and "}does not list ${payHeader} in Access-Control-Allow-Headers (got "${allowH ?? ""}"). Browsers will block the paid retry.`,
-        fix: `Answer OPTIONS on paid routes with Access-Control-Allow-Headers including ${payHeader} (and Content-Type).`,
-        data: { allowHeaders: allowH, status: p.status },
-      });
-    } else {
-      out.push({
-        id: "handshake.cors-preflight",
-        category: C,
-        status: "pass",
-        title: "CORS preflight allows the payment header",
-        message: `Preflight allows ${payHeader}.`,
-      });
-    }
-  }
-  return out;
 }
