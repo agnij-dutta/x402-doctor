@@ -13,6 +13,8 @@ beforeAll(async () => {
   routes["/good"] = { header: v2Challenge(`${srv.base}/good`), cors: GOOD_CORS };
   routes["/bad"] = { header: v2Challenge(`${srv.base}/bad`, {}, { name: "USD Coin" }), cors: GOOD_CORS };
   routes["/busy"] = { status: 429 };
+  routes["/no-expose"] = { header: v2Challenge(`${srv.base}/no-expose`), cors: { ...GOOD_CORS, expose: "X-Request-Id" } };
+  routes["/app-only"] = { header: v2Challenge(`${srv.base}/app-only`), cors: { ...GOOD_CORS, allowOrigin: "https://app.example" } };
 });
 afterAll(async () => {
   await srv.close();
@@ -55,6 +57,30 @@ describe("cli", () => {
   });
   it("--min-score lets CI tolerate failures above a threshold", async () => {
     expect((await cli([`${srv.base}/bad`, "--min-score", "10"])).code).toBe(0);
+  });
+  it("prints a browser verdict line", async () => {
+    expect((await cli([`${srv.base}/good`])).stdout).toMatch(/browser\s+READY/);
+    const r = await cli([`${srv.base}/no-expose`]);
+    expect(r.stdout).toMatch(/browser\s+BLOCKED: PAYMENT-REQUIRED not exposed/);
+    expect(r.stdout).toContain("Browser (CORS)");
+    expect(r.code).toBe(1);
+  });
+  it("--server-only skips the browser checks (and their failures)", async () => {
+    const r = await cli([`${srv.base}/no-expose`, "--server-only", "--json"]);
+    const j = JSON.parse(r.stdout) as Report;
+    expect(j.browser?.status).toBe("not-browser-facing");
+    expect(j.score).toBe(100);
+    expect(r.code).toBe(0);
+  });
+  it("--origin probes as the given origin", async () => {
+    const r = await cli([`${srv.base}/app-only`, "--origin", "https://app.example/", "--json"]);
+    expect((JSON.parse(r.stdout) as Report).browser?.status).toBe("ready");
+    expect((await cli([`${srv.base}/app-only`, "--origin", "not a url"])).code).toBe(64);
+    expect((await cli([`${srv.base}/app-only`, "--origin", "file:///etc"])).code).toBe(64);
+  });
+  it("--json output is complete when piped (no truncation at exit)", async () => {
+    const r = await cli([`${srv.base}/good`, `${srv.base}/no-expose`, `${srv.base}/bad`, "--json"]);
+    expect((JSON.parse(r.stdout) as Report[]).length).toBe(3);
   });
   it('"--" ends options, so a flag-looking URL is rejected as a URL, not parsed as a flag (action input safety)', async () => {
     const run = (args: string[]) =>

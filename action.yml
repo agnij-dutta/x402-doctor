@@ -20,6 +20,12 @@ inputs:
   strict:
     description: Treat warnings as failures.
     default: "false"
+  origin:
+    description: Origin sent on the CORS probes, e.g. your frontend (https://app.example.com). Empty means https://x402-doctor.example.
+    default: ""
+  server-only:
+    description: Skip the browser (CORS) probes and checks, for endpoints that are not meant to be called from browsers.
+    default: "false"
 runs:
   using: composite
   steps:
@@ -35,6 +41,8 @@ runs:
         X402D_MIN_SCORE: ${{ inputs.min-score }}
         X402D_FACILITATOR: ${{ inputs.facilitator }}
         X402D_STRICT: ${{ inputs.strict }}
+        X402D_ORIGIN: ${{ inputs.origin }}
+        X402D_SERVER_ONLY: ${{ inputs.server-only }}
         X402D_CLI: ${{ github.action_path }}/dist/cli.js
       run: |
         # Split on spaces AND newlines: plain `read` stops at the first line of a multi-line `urls:` block.
@@ -43,5 +51,7 @@ runs:
         if [ -n "$X402D_MIN_SCORE" ]; then args+=(--min-score "$X402D_MIN_SCORE"); fi
         if [ -n "$X402D_FACILITATOR" ]; then args+=(--facilitator "$X402D_FACILITATOR"); fi
         if [ "$X402D_STRICT" = "true" ]; then args+=(--strict); fi
+        if [ -n "$X402D_ORIGIN" ]; then args+=(--origin "$X402D_ORIGIN"); fi
+        if [ "$X402D_SERVER_ONLY" = "true" ]; then args+=(--server-only); fi
         # "--" ends option parsing, so a urls entry starting with "-" is a URL, never a flag.
         node "$X402D_CLI" "${args[@]}" -- "${urls[@]}"

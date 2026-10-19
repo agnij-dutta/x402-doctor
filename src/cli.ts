@@ -19,6 +19,8 @@ Options
       --rpc <caip2=url>    Override an RPC, e.g. --rpc eip155:8453=https://... (repeatable)
       --offline            Skip on-chain reads and public facilitator lookups (--facilitator is still checked)
       --timeout <ms>       Per-request timeout (default 15000)
+      --origin <url>       Origin sent on the CORS probes (default https://x402-doctor.example)
+      --server-only        Skip the browser (CORS) probes and checks, for endpoints not meant for browsers
       --min-score <n>      Exit 1 if score is below n (default: exit 1 on any failure)
       --strict             Treat warnings as failures for the exit code (ignored with --min-score)
   -v, --verbose            Show every check, with details and skipped checks
@@ -81,6 +83,8 @@ async function main() {
         rpc: { type: "string", multiple: true },
         offline: { type: "boolean" },
         timeout: { type: "string" },
+        origin: { type: "string" },
+        "server-only": { type: "boolean" },
         "min-score": { type: "string" },
         strict: { type: "boolean" },
         verbose: { type: "boolean", short: "v" },
@@ -112,6 +116,21 @@ async function main() {
     (rpc[k] ??= []).push(kv.slice(idx + 1));
   }
   const timeoutMs = numberFlag("--timeout", o.timeout, (n) => Number.isInteger(n) && n > 0, "a positive integer (ms)");
+  let corsOrigin: string | undefined;
+  if (o.origin !== undefined) {
+    let parsedOrigin: string | undefined;
+    try {
+      const u = new URL(o.origin);
+      if ((u.protocol === "http:" || u.protocol === "https:") && u.origin !== "null") parsedOrigin = u.origin;
+    } catch {
+      // fall through
+    }
+    if (!parsedOrigin) {
+      process.stderr.write(`--origin must be an http(s) origin like https://app.example.com, got "${o.origin}"\n`);
+      process.exit(64);
+    }
+    corsOrigin = parsedOrigin;
+  }
   const minScore = numberFlag("--min-score", o["min-score"], (n) => n >= 0 && n <= 100, "a number from 0 to 100");
   const reports: Report[] = [];
   for (const url of positionals) {
@@ -127,6 +146,8 @@ async function main() {
       rpc,
       offline: o.offline,
       timeoutMs,
+      corsOrigin,
+      serverOnly: o["server-only"],
     });
     reports.push(r);
     if (!o.json) process.stdout.write(renderPretty(r, { verbose: o.verbose }));
